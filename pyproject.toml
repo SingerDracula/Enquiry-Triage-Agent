@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-enquiry-triage"
+version = "0.1.0"
+description = "A production-minded, human-reviewed customer enquiry triage and reply-draft agent."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.7,<3",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6,<1"]
+
+[project.scripts]
+triage-agent = "enquiry_triage.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.data-files]
+"share/ai-enquiry-triage" = [
+  "data/golden_set.jsonl",
+  "data/golden_set.sha256",
+  "data/dev_set.jsonl",
+  "data/example_email.txt",
+]
+
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
