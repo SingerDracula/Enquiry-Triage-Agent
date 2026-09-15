@@ -4,7 +4,7 @@ import unittest
 
 from enquiry_triage.agent import TriageAgent
 from enquiry_triage.models import Inquiry, ProviderResponse, TriageResult, Usage
-from enquiry_triage.providers import DemoRuleBasedProvider
+from enquiry_triage.providers import DemoRuleBasedProvider, ProviderError
 
 
 class MalformedProvider:
@@ -48,6 +48,16 @@ class NeverCalledProvider:
         raise AssertionError("Unsafe email should be blocked before the provider is called")
 
 
+class RejectingProvider:
+    name = "rejecting-test-provider"
+
+    def generate(self, *, system_prompt: str, email_text: str, response_schema: dict) -> ProviderResponse:
+        raise ProviderError(
+            "Remote provider rejected the request with HTTP 400: response_format unavailable",
+            latency_ms=12.5,
+        )
+
+
 class AgentTests(unittest.TestCase):
     def test_valid_demo_result_is_schema_validated_and_pending_review(self) -> None:
         inquiry = Inquiry(id="case-001", subject="Premium query", body="What premium payment is due?")
@@ -86,6 +96,15 @@ class AgentTests(unittest.TestCase):
 
         self.assertFalse(attempt.is_valid)
         self.assertEqual(attempt.validation_error, "SAFETY_POLICY_FAILED: UNSUPPORTED_NUMERIC_FACT")
+
+    def test_provider_failure_reports_reason_and_latency(self) -> None:
+        attempt = TriageAgent(RejectingProvider()).triage(Inquiry(id="case-005", body="Hello"))
+
+        self.assertFalse(attempt.is_valid)
+        self.assertIsNone(attempt.result)
+        self.assertEqual(attempt.validation_error, "PROVIDER_FAILURE")
+        self.assertIn("HTTP 400", attempt.failure_detail or "")
+        self.assertEqual(attempt.latency_ms, 12.5)
 
     def test_safety_status_is_required_by_the_model_contract(self) -> None:
         with self.assertRaises(ValueError):

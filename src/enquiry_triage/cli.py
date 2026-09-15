@@ -69,7 +69,11 @@ def build_parser() -> argparse.ArgumentParser:
     triage_parser.add_argument("email_file", type=Path, help="Plain-text email body")
     triage_parser.add_argument("--subject", default="", help="Optional subject line")
     triage_parser.add_argument("--inquiry-id", default=None, help="Defaults to email file stem")
-    triage_parser.add_argument("--provider", default="demo-fast", help="demo-fast, demo-conservative, compatible:<model>")
+    triage_parser.add_argument(
+        "--provider",
+        default="demo-fast",
+        help="demo-fast, demo-conservative, compatible:<model>, deepseek:<model>",
+    )
     triage_parser.add_argument("--no-queue", action="store_true", help="Do not store a pending local review")
     _add_database_option(triage_parser)
 

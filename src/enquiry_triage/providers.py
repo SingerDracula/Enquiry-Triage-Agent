@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from enum import Enum
 from typing import Protocol
 from urllib.parse import urlparse
 
@@ -25,6 +26,25 @@ from .policies import is_low_priority, is_urgent, requires_refusal, safe_refusal
 
 class ProviderError(RuntimeError):
     """Raised when a remote model cannot be reached or produces no usable message."""
+
+    def __init__(self, message: str, *, latency_ms: float = 0.0) -> None:
+        super().__init__(message)
+        self.latency_ms = latency_ms
+
+
+def _error_detail(error: urllib.error.HTTPError, limit: int = 300) -> str:
+    """Return a bounded, single-line excerpt of an HTTP error body for diagnostics."""
+
+    body = error.read() if error.fp is not None else b""
+    text = body.decode("utf-8", "replace") if isinstance(body, bytes) else str(body)
+    return " ".join(text.split())[:limit]
+
+
+class StructuredOutputMode(str, Enum):
+    """Server-side output modes supported by the chat-completions adapter."""
+
+    JSON_SCHEMA_STRICT = "json_schema_strict"
+    JSON_OBJECT = "json_object"
 
 
 class TriageProvider(Protocol):
@@ -131,31 +151,59 @@ class DemoRuleBasedProvider:
 
 @dataclass(frozen=True)
 class OpenAICompatibleProvider:
-    """Generic JSON-schema adapter for OpenAI-compatible chat-completions endpoints."""
+    """Chat-completions adapter with strict-schema and JSON-object compatibility modes."""
 
     model: str
     base_url: str
     api_key: str
     input_usd_per_million: float = 0.0
     output_usd_per_million: float = 0.0
+    structured_output_mode: StructuredOutputMode = StructuredOutputMode.JSON_SCHEMA_STRICT
+    max_tokens: int = 800
 
     @property
     def name(self) -> str:
         return self.model
 
-    def generate(self, *, system_prompt: str, email_text: str, response_schema: dict) -> ProviderResponse:
-        payload = {
-            "model": self.model,
-            "temperature": 0,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": email_text},
-            ],
-            "response_format": {
+    def build_payload(self, *, system_prompt: str, email_text: str, response_schema: dict) -> dict:
+        """Build the provider request without exposing a local schema-validation fallback as strict mode."""
+
+        if self.structured_output_mode is StructuredOutputMode.JSON_SCHEMA_STRICT:
+            response_format = {
                 "type": "json_schema",
                 "json_schema": {"name": "triage_result", "strict": True, "schema": response_schema},
-            },
+            }
+            formatted_system_prompt = system_prompt
+        else:
+            response_format = {"type": "json_object"}
+            formatted_system_prompt = (
+                f"{system_prompt}\n\n"
+                "DeepSeek json mode requirements: output one json object only, without markdown. "
+                "Use exactly the fields and enum values in the JSON Schema below.\n"
+                "Example JSON shape (use the email facts, not these example values):\n"
+                '{"case_type":"OTHER","priority":"NORMAL","summary":"Short factual summary.",'
+                '"draft_reply":"Professional draft.","confidence":{"score":0.5,'
+                '"methodology":"Brief calibrated rationale."},"safety_status":"PENDING_REVIEW"}\n'
+                f"JSON Schema:\n{json.dumps(response_schema, ensure_ascii=False)}"
+            )
+
+        return {
+            "model": self.model,
+            "temperature": 0,
+            "max_tokens": self.max_tokens,
+            "messages": [
+                {"role": "system", "content": formatted_system_prompt},
+                {"role": "user", "content": email_text},
+            ],
+            "response_format": response_format,
         }
+
+    def generate(self, *, system_prompt: str, email_text: str, response_schema: dict) -> ProviderResponse:
+        payload = self.build_payload(
+            system_prompt=system_prompt,
+            email_text=email_text,
+            response_schema=response_schema,
+        )
         request = urllib.request.Request(
             f"{self.base_url.rstrip('/')}/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
@@ -166,17 +214,31 @@ class OpenAICompatibleProvider:
         try:
             with urllib.request.urlopen(request, timeout=60) as response:  # nosec B310 - configured endpoint
                 decoded = json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
-            raise ProviderError(f"Remote provider failed: {exc}") from exc
+        except urllib.error.HTTPError as exc:
+            raise ProviderError(
+                f"Remote provider rejected the request with HTTP {exc.code}: {_error_detail(exc)}",
+                latency_ms=(time.perf_counter() - started) * 1_000,
+            ) from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ProviderError(
+                f"Remote provider failed: {exc}",
+                latency_ms=(time.perf_counter() - started) * 1_000,
+            ) from exc
 
+        elapsed_ms = (time.perf_counter() - started) * 1_000
         try:
-            content = decoded["choices"][0]["message"]["content"]
+            choice = decoded["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise ProviderError("Remote provider output was truncated", latency_ms=elapsed_ms)
+            content = choice["message"]["content"]
             if isinstance(content, list):
                 content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
             if not isinstance(content, str):
                 raise TypeError("message content was not a string")
         except (KeyError, IndexError, TypeError) as exc:
-            raise ProviderError("Remote provider response did not include a text message") from exc
+            raise ProviderError(
+                "Remote provider response did not include a text message", latency_ms=elapsed_ms
+            ) from exc
 
         usage_raw = decoded.get("usage", {})
         input_tokens = int(usage_raw.get("prompt_tokens", usage_raw.get("input_tokens", 0)) or 0)
@@ -193,7 +255,7 @@ class OpenAICompatibleProvider:
 
 
 def provider_from_spec(spec: str) -> TriageProvider:
-    """Create providers: demo-fast, demo-conservative, compatible:<model>."""
+    """Create providers: demo-*, compatible:<model>, deepseek:<model>."""
 
     if spec in {"demo-fast", "demo-conservative"}:
         return DemoRuleBasedProvider(profile=spec.removeprefix("demo-"))
@@ -212,5 +274,23 @@ def provider_from_spec(spec: str) -> TriageProvider:
             api_key=api_key,
             input_usd_per_million=float(os.getenv("OPENAI_COMPATIBLE_INPUT_USD_PER_MILLION", "0")),
             output_usd_per_million=float(os.getenv("OPENAI_COMPATIBLE_OUTPUT_USD_PER_MILLION", "0")),
+        )
+    if spec.startswith("deepseek:"):
+        model = spec.split(":", 1)[1].strip()
+        base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
+        api_key = (
+            os.environ.get("DEEPSEEK_API_KEY", "").strip()
+            or os.environ.get("OPENAI_COMPATIBLE_API_KEY", "").strip()
+        )
+        if not model or not api_key:
+            raise ProviderError("deepseek:<model> requires DEEPSEEK_API_KEY")
+        _validate_base_url(base_url)
+        return OpenAICompatibleProvider(
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            input_usd_per_million=float(os.getenv("DEEPSEEK_INPUT_USD_PER_MILLION", "0")),
+            output_usd_per_million=float(os.getenv("DEEPSEEK_OUTPUT_USD_PER_MILLION", "0")),
+            structured_output_mode=StructuredOutputMode.JSON_OBJECT,
         )
     raise ProviderError(f"Unknown provider spec: {spec}")

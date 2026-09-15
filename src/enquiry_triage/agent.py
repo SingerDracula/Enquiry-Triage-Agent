@@ -40,11 +40,13 @@ class TriageAgent:
                 email_text=email_text,
                 response_schema=json_schema(),
             )
-        except ProviderError:
+        except ProviderError as exc:
             return TriageAttempt(
                 inquiry_id=inquiry.id,
                 provider=self.provider.name,
                 validation_error="PROVIDER_FAILURE",
+                failure_detail=str(exc)[:300],
+                latency_ms=exc.latency_ms,
             )
 
         try:

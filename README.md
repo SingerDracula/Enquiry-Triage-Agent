@@ -10,7 +10,7 @@ A production-minded MVP for classifying inbound insurance customer emails, draft
 - 48 synthetic labelled enquiries: 30 frozen golden records and 18 development records. They cover all six case types, urgent/normal/low priorities, ambiguous messages, angry tone, missing information, prompt injection, and unsafe requests.
 - A re-runnable evaluation harness for macro-F1, priority accuracy, urgent recall, groundedness, reply-quality heuristic, calibration, latency, cost, quality gates, and a weighted model comparison.
 - An offline deterministic demo provider so the full workflow and test suite run without credentials. It is a workflow baseline, not a substitute for the case study's two real LLMs.
-- A generic OpenAI-compatible structured-output adapter for real model comparisons.
+- A strict JSON Schema adapter for compatible providers and a DeepSeek JSON Object adapter with local Pydantic enforcement.
 
 ## Quick start
 
@@ -45,7 +45,7 @@ PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v
 
 ## Real LLM comparison
 
-Copy `.env.example` to `.env`, set values for an HTTPS endpoint that supports OpenAI-compatible chat completions with JSON Schema output, then export its variables in your shell. Plain HTTP is accepted only for a localhost development endpoint. Prices are configuration values, not hard-coded assumptions; record the values used for each evaluation.
+For providers with JSON Schema strict mode, configure an HTTPS OpenAI-compatible chat-completions endpoint in `.env`. Plain HTTP is accepted only for localhost development. Prices are configuration values, not hard-coded assumptions; record the values used for each evaluation.
 
 ```bash
 set -a
@@ -53,6 +53,15 @@ source .env
 set +a
 .venv/bin/triage-agent evaluate \
   --models compatible:model-a,compatible:model-b
+```
+
+For DeepSeek Chat Completions, use `.env.deepseek.example` as a safe template, export its variables, then choose `deepseek:<model>`. This sends `response_format={"type":"json_object"}` and embeds the required JSON Schema and example in the system prompt. The response still must pass local Pydantic validation and safety checks before it can be reviewed.
+
+`compatible:<model>` is for endpoints that accept `response_format={"type":"json_schema", ...}`. DeepSeek rejects that mode with HTTP 400 ("This response_format type is unavailable now"), so pointing `compatible:` at a DeepSeek base URL always fails. Use the `deepseek:` spec instead; the failure output names the HTTP status and the provider's error message so a mismatch is diagnosable.
+
+```bash
+.venv/bin/triage-agent triage data/example_email.txt \
+  --provider deepseek:your-model-id
 ```
 
 The two model identifiers must be genuinely distinct models, tiers, or providers. The default `demo-fast,demo-conservative` command validates the evaluation pipeline only; it must not be presented as a two-LLM case-study comparison.
