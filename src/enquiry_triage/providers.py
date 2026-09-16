@@ -179,12 +179,23 @@ class OpenAICompatibleProvider:
             response_format = {"type": "json_object"}
             formatted_system_prompt = (
                 f"{system_prompt}\n\n"
-                "DeepSeek json mode requirements: output one json object only, without markdown. "
-                "Use exactly the fields and enum values in the JSON Schema below.\n"
+                "DeepSeek JSON mode requirements: return exactly one JSON object and no markdown, "
+                "preamble, explanation, or extra fields. Use the exact field names and enum values below.\n"
+                "Field contract:\n"
+                "- case_type: exactly one of POLICY_QUERY, PREMIUM_BILLING, ADDRESS_CHANGE, CLAIM, COMPLAINT, OTHER.\n"
+                "- priority: exactly one of URGENT, NORMAL, LOW; do not treat anger alone as URGENT.\n"
+                "- summary: one or two factual sentences, 10-360 characters.\n"
+                "- draft_reply: professional customer-service draft, 20-2000 characters; do not invent facts, "
+                "amounts, dates, coverage, or timelines.\n"
+                "- confidence.score: JSON number from 0.0 to 1.0.\n"
+                "- confidence.methodology: exactly one concise sentence, 12-120 characters, explaining only "
+                "the classification evidence and uncertainty. Do not repeat the email, policy rules, or a long rationale.\n"
+                "- safety_status: exactly PENDING_REVIEW or REFUSE_AND_ESCALATE.\n"
                 "Example JSON shape (use the email facts, not these example values):\n"
-                '{"case_type":"OTHER","priority":"NORMAL","summary":"Short factual summary.",'
-                '"draft_reply":"Professional draft.","confidence":{"score":0.5,'
-                '"methodology":"Brief calibrated rationale."},"safety_status":"PENDING_REVIEW"}\n'
+                '{"case_type":"OTHER","priority":"NORMAL","summary":"Customer asks for help with a service issue.",'
+                '"draft_reply":"Hello, thank you for contacting us. A customer-service agent will review your request. Kind regards, Customer Service.",'
+                '"confidence":{"score":0.5,"methodology":"The request is ambiguous and needs human review."},'
+                '"safety_status":"PENDING_REVIEW"}\n'
                 f"JSON Schema:\n{json.dumps(response_schema, ensure_ascii=False)}"
             )
 
