@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Enquiry Triage</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172033; background: #f4f7fb; }
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      [v-cloak] { display: none; }
+      header { background: #102a43; color: white; padding: 22px max(24px, calc((100% - 1180px) / 2)); }
+      header h1 { margin: 0; font-size: 1.35rem; }
+      header p { margin: 5px 0 0; color: #c9d8e8; font-size: .92rem; }
+      main { max-width: 1180px; margin: 24px auto; padding: 0 20px 48px; }
+      nav { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+      button, input, textarea, select { font: inherit; }
+      button { border: 0; border-radius: 7px; padding: 9px 13px; cursor: pointer; background: #146c94; color: white; font-weight: 650; }
+      button:hover { background: #0f5576; } button:disabled { opacity: .55; cursor: wait; }
+      button.secondary { background: #e9eef5; color: #26374a; } button.danger { background: #b42318; }
+      nav button.active { background: #0b4f71; box-shadow: 0 0 0 2px #7dd3fc; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(275px, 1fr)); gap: 16px; }
+      .card { background: white; border: 1px solid #dce5ef; border-radius: 10px; padding: 18px; box-shadow: 0 2px 5px #102a430d; }
+      h2, h3 { margin: 0 0 14px; } h2 { font-size: 1.2rem; } h3 { font-size: 1rem; }
+      label { display: block; font-size: .86rem; font-weight: 700; margin: 12px 0 5px; color: #40556d; }
+      input, textarea, select { width: 100%; border: 1px solid #aebfd0; border-radius: 7px; padding: 9px; color: #172033; background: white; }
+      textarea { min-height: 190px; resize: vertical; line-height: 1.45; }
+      .actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+      .notice { margin: 0 0 16px; padding: 11px 13px; border-radius: 7px; background: #e8f3fb; color: #124d6d; }
+      .error { background: #fff0ef; color: #9b1c1c; border: 1px solid #f9c6c2; }
+      .success { background: #ebf8ef; color: #166534; border: 1px solid #bae6c5; }
+      pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; background: #0f172a; color: #dbeafe; padding: 13px; border-radius: 8px; font-size: .8rem; }
+      .pill { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: .75rem; font-weight: 750; background: #e1effe; color: #075985; }
+      .pill.fail { background: #fee2e2; color: #991b1b; } .pill.pass { background: #dcfce7; color: #166534; }
+      table { width: 100%; border-collapse: collapse; font-size: .88rem; } th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e4ebf3; vertical-align: top; } th { color: #52667f; }
+      .muted { color: #64748b; font-size: .88rem; } .wide { overflow-x: auto; } .check { display: flex; gap: 7px; align-items: center; font-weight: 500; margin-top: 12px; }
+      .check input { width: auto; } .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, .9fr); gap: 16px; } @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <header><h1>Customer Enquiry Triage</h1><p>Local-only human review workflow — no email is ever sent.</p></header>
+      <main>
+        <div v-if="error" class="notice error">{{ error }}</div>
+        <div v-if="notice" class="notice success">{{ notice }}</div>
+        <nav>
+          <button v-for="item in tabs" :key="item.id" class="secondary" :class="{active: tab === item.id}" @click="tab = item.id">{{ item.label }}</button>
+        </nav>
+
+        <section v-if="tab === 'triage'" class="split">
+          <form class="card" @submit.prevent="submitTriage">
+            <h2>Triage an email</h2>
+            <label for="provider">Provider</label>
+            <select id="provider" v-model="triageForm.provider"><option v-for="provider in providers" :key="provider" :value="provider">{{ provider }}</option></select>
+            <label for="subject">Subject</label><input id="subject" v-model="triageForm.subject" placeholder="e.g. Payment page failed" />
+            <label for="body">Email body</label><textarea id="body" required v-model="triageForm.body" placeholder="Paste the customer email here"></textarea>
+            <label class="check"><input type="checkbox" v-model="triageForm.queue_for_review" /> Queue valid drafts for human review</label>
+            <div class="actions"><button :disabled="busy">{{ busy ? 'Working…' : 'Triage' }}</button></div>
+          </form>
+          <div class="card"><h2>Result</h2><p v-if="!triageResult" class="muted">A validated proposal will appear here. Invalid output remains visible and is not queued.</p><pre v-else>{{ pretty(triageResult) }}</pre></div>
+        </section>
+
+        <section v-else-if="tab === 'review'" class="split">
+          <div class="card"><div class="actions" style="margin-top:0;justify-content:space-between"><h2>Pending review</h2><button class="secondary" @click="loadReviews" :disabled="busy">Refresh</button></div>
+            <p v-if="!reviews.length" class="muted">No pending proposals.</p>
+            <div v-for="record in reviews" :key="record.id" class="card" style="margin-top:10px;padding:12px;cursor:pointer" @click="selectReview(record)">
+              <strong>#{{ record.id }} · {{ record.inquiry_id }}</strong><br /><span class="pill">{{ record.result.case_type }}</span> <span class="pill">{{ record.result.priority }}</span><p class="muted">{{ record.result.summary }}</p>
+            </div>
+          </div>
+          <div class="card"><h2>Review proposal</h2><p v-if="!selectedReview" class="muted">Select a pending proposal.</p><template v-else>
+            <label>Original subject</label><input :value="selectedReview.source_subject" readonly />
+            <label>Original body</label><textarea :value="selectedReview.source_body" readonly></textarea>
+            <label>Draft reply</label><textarea v-model="editedReply"></textarea>
+            <div class="actions"><button :disabled="busy" @click="decide('ACCEPTED')">Accept</button><button :disabled="busy" @click="decide('EDITED_AND_ACCEPTED')">Accept edited</button><button class="danger" :disabled="busy" @click="decide('DISCARDED')">Discard</button></div>
+          </template></div>
+        </section>
+
+        <section v-else class="card">
+          <h2>Evaluate providers</h2><p class="muted">Runs the frozen 30-case golden set. Each selected provider must be configured in private <code>config.toml</code>. Real provider calls can incur cost.</p>
+          <div class="grid"><label v-for="provider in providers" :key="provider" class="check"><input type="checkbox" :value="provider" v-model="evaluationProviders" /> {{ provider }}</label></div>
+          <div class="actions"><button :disabled="busy" @click="runEvaluation">{{ busy ? 'Running evaluation…' : 'Evaluate selected providers' }}</button></div>
+          <template v-if="evaluation"><div class="notice">Artifacts saved: {{ evaluation.artifacts.summary }}</div>
+            <div v-for="run in evaluation.comparison.runs" :key="run.summary.model" class="card" style="margin-top:16px">
+              <h3>{{ run.summary.model }} <span class="pill" :class="{fail: !allGates(run), pass: allGates(run)}">{{ allGates(run) ? 'all gates pass' : 'gates failed' }}</span></h3>
+              <div class="grid muted"><span>Classification: {{ percent(run.summary.classification_accuracy) }}</span><span>Priority: {{ percent(run.summary.priority_accuracy) }}</span><span>Schema: {{ percent(run.summary.schema_success_rate) }}</span><span>ECE: {{ run.summary.calibration.ece ?? 'n/a' }}</span></div>
+              <h3 style="margin-top:18px">Failing / mismatched cases</h3><p v-if="!issues(run).length" class="muted">None.</p>
+              <div v-else class="wide"><table><thead><tr><th>Case</th><th>Reason</th><th>Expected → actual</th></tr></thead><tbody><tr v-for="record in issues(run)" :key="record.inquiry_id"><td>{{ record.inquiry_id }}</td><td>{{ issueReason(record) }}</td><td>{{ record.expected_case_type }}/{{ record.expected_priority }} → {{ record.actual_case_type ?? '—' }}/{{ record.actual_priority ?? '—' }}</td></tr></tbody></table></div>
+            </div>
+          </template>
+        </section>
+      </main>
+    </div>
+    <script>
+      const { createApp } = Vue;
+      createApp({
+        data() { return {
+          tabs: [{id:'triage',label:'Triage'}, {id:'review',label:'Review'}, {id:'evaluate',label:'Evaluate'}], tab:'triage',
+          providers:['demo-fast','demo-conservative','gpt','deepseek','gemini'], busy:false, error:'', notice:'',
+          triageForm:{subject:'',body:'',provider:'demo-fast',queue_for_review:true}, triageResult:null,
+          reviews:[], selectedReview:null, editedReply:'', evaluationProviders:['deepseek','gemini'], evaluation:null,
+        }; },
+        mounted() { this.loadReviews(); },
+        methods: {
+          async api(path, options={}) { const response = await fetch(path, {headers:{'Content-Type':'application/json'}, ...options}); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || 'Request failed'); return data; },
+          clearMessage() { this.error=''; this.notice=''; },
+          async submitTriage() { this.clearMessage(); this.busy=true; try { this.triageResult = await this.api('/api/triage',{method:'POST',body:JSON.stringify(this.triageForm)}); if (this.triageResult.review_record) { this.notice='Validated draft added to the local review queue.'; await this.loadReviews(); } else if (!this.triageResult.attempt.result) this.error='The proposal failed validation; see failure_detail below.'; } catch (error) { this.error=error.message; } finally { this.busy=false; } },
+          async loadReviews() { this.clearMessage(); try { this.reviews=(await this.api('/api/reviews')).records; } catch (error) { this.error=error.message; } },
+          selectReview(record) { this.selectedReview=record; this.editedReply=record.result.draft_reply; },
+          async decide(decision) { if (!this.selectedReview) return; this.clearMessage(); this.busy=true; try { await this.api(`/api/reviews/${this.selectedReview.id}/decision`,{method:'POST',body:JSON.stringify({decision,edited_reply:decision==='EDITED_AND_ACCEPTED' ? this.editedReply : null})}); this.notice=`Review record #${this.selectedReview.id} updated. No email was sent.`; this.selectedReview=null; this.editedReply=''; await this.loadReviews(); } catch (error) { this.error=error.message; } finally { this.busy=false; } },
+          async runEvaluation() { this.clearMessage(); if (this.evaluationProviders.length < 2) { this.error='Choose at least two distinct providers.'; return; } this.busy=true; try { this.evaluation=await this.api('/api/evaluate',{method:'POST',body:JSON.stringify({providers:this.evaluationProviders})}); this.notice='Evaluation completed. Failure reasons are shown below.'; } catch (error) { this.error=error.message; } finally { this.busy=false; } },
+          issues(run) { return run.records.filter(record => !record.valid || !record.classification_correct || !record.priority_correct || !record.safety_correct || !record.groundedness_pass); },
+          issueReason(record) { if (!record.valid) return `${record.validation_error || 'INVALID_RESULT'}${record.failure_detail ? ': ' + record.failure_detail : ''}`; const items=[]; if (!record.classification_correct) items.push('case type mismatch'); if (!record.priority_correct) items.push('priority mismatch'); if (!record.safety_correct) items.push('safety mismatch'); if (!record.groundedness_pass) items.push('groundedness failed'); return items.join('; '); },
+          allGates(run) { return Object.values(run.summary.gates).every(Boolean); }, percent(value) { return `${(value * 100).toFixed(1)}%`; }, pretty(value) { return JSON.stringify(value,null,2); },
+        }
+      }).mount('#app');
+    </script>
+  </body>
+</html>

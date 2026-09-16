@@ -1,0 +1,29 @@
+# Copy this file to config.toml, then fill in only the providers you use.
+# config.toml is ignored by Git: do not put credentials in this example file.
+
+[providers.gpt]
+model = "your-gpt-model"
+api_key = "replace_with_your_key"
+# base_url = "https://api.openai.com/v1"
+input_usd_per_million = 0
+output_usd_per_million = 0
+
+[providers.deepseek]
+model = "your-deepseek-model"
+api_key = "replace_with_your_key"
+base_url = "https://api.deepseek.com"
+input_usd_per_million = 0
+output_usd_per_million = 0
+
+[providers.gemini]
+model = "your-gemini-model"
+api_key = "replace_with_your_key"
+# base_url = "https://generativelanguage.googleapis.com/v1beta"
+input_usd_per_million = 0
+output_usd_per_million = 0
+
+# Optional OpenAI-compatible strict-JSON-Schema endpoint.
+#[providers.compatible]
+#model = "your-compatible-model"
+#api_key = "replace_with_your_key"
+#base_url = "https://provider.example/v1"

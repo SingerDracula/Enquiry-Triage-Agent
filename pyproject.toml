@@ -9,7 +9,9 @@ description = "A production-minded, human-reviewed customer enquiry triage and r
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "fastapi>=0.115,<1",
   "pydantic>=2.7,<3",
+  "uvicorn>=0.30,<1",
 ]
 
 [project.optional-dependencies]
@@ -17,12 +19,16 @@ dev = ["ruff>=0.6,<1"]
 
 [project.scripts]
 triage-agent = "enquiry_triage.cli:app"
+triage-web = "enquiry_triage.web:run"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+enquiry_triage = ["static/*.html"]
 
 [tool.setuptools.data-files]
 "share/ai-enquiry-triage" = [

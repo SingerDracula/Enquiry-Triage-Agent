@@ -43,6 +43,17 @@ Run the `unittest` suite after installing the project dependency:
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v
 ```
 
+## Local web UI
+
+Start the local FastAPI and Vue UI after installing the updated dependencies:
+
+```bash
+.venv/bin/pip install -e .
+.venv/bin/triage-web
+```
+
+Open `http://127.0.0.1:8000`. The page accepts an email subject/body for triage, lets a reviewer accept, edit-and-accept, or discard queued drafts, and runs provider evaluations. It shows every invalid or mismatched evaluation case with its safe failure reason. The server binds only to localhost, reads model settings from private `config.toml`, and never sends email.
+
 ## Real LLM comparison
 
 Provider URLs must use HTTPS (plain HTTP is accepted only for localhost development). Prices are configuration values, not hard-coded assumptions; record the values used for each evaluation.
