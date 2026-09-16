@@ -72,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     triage_parser.add_argument(
         "--provider",
         default="demo-fast",
-        help="demo-fast, demo-conservative, compatible:<model>, deepseek:<model>",
+        help="demo-fast, demo-conservative, gpt:<model>, deepseek:<model>, gemini:<model>, compatible:<model>",
     )
     triage_parser.add_argument("--no-queue", action="store_true", help="Do not store a pending local review")
     _add_database_option(triage_parser)

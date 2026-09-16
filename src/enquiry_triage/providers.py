@@ -10,7 +10,7 @@ import urllib.request
 from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from .models import (
     CaseType,
@@ -254,8 +254,162 @@ class OpenAICompatibleProvider:
         )
 
 
+def _gemini_response_schema(response_schema: dict) -> dict:
+    """Convert the small Pydantic JSON Schema subset used here to Gemini's schema format.
+
+    Gemini's GenerateContent API uses upper-case JSON schema type names and does
+    not accept Pydantic's local ``$defs``/``$ref`` representation directly. Its
+    ``responseSchema`` is an OpenAPI-style subset that also rejects keywords
+    such as ``additionalProperties``, so Pydantic's ``extra="forbid"`` marker is
+    dropped (the remote schema still only permits the declared properties).
+    Keeping this conversion deliberately narrow means unsupported contract
+    constructs fail safely in local Pydantic validation rather than being
+    silently approximated in a remote request.
+    """
+
+    definitions = response_schema.get("$defs", {})
+
+    def convert(node: object) -> object:
+        if isinstance(node, list):
+            return [convert(value) for value in node]
+        if not isinstance(node, dict):
+            return node
+        if "$ref" in node:
+            reference = node["$ref"]
+            if not isinstance(reference, str) or not reference.startswith("#/$defs/"):
+                raise ProviderError("Gemini provider received an unsupported JSON Schema reference")
+            name = reference.removeprefix("#/$defs/")
+            if name not in definitions:
+                raise ProviderError("Gemini provider received an unresolved JSON Schema reference")
+            return convert(definitions[name])
+
+        converted: dict[str, object] = {}
+        for key in (
+            "title",
+            "description",
+            "enum",
+            "required",
+            "minimum",
+            "maximum",
+            "minItems",
+            "maxItems",
+        ):
+            if key in node:
+                converted[key] = convert(node[key])
+        if "additionalProperties" in node:
+            # Gemini's responseSchema has no ``additionalProperties`` field. A
+            # closed object (``false``) matches the remote default of only
+            # accepting declared properties, so it can be dropped safely. Open
+            # or free-form objects have no faithful equivalent and must fail
+            # loudly instead of being approximated.
+            if node["additionalProperties"] is not False:
+                raise ProviderError(
+                    "Gemini provider does not support open JSON Schema objects"
+                )
+        if "type" in node:
+            schema_type = node["type"]
+            if not isinstance(schema_type, str):
+                raise ProviderError("Gemini provider supports only single JSON Schema types")
+            converted["type"] = schema_type.upper()
+        if "properties" in node:
+            properties = node["properties"]
+            if not isinstance(properties, dict):
+                raise ProviderError("Gemini provider received invalid JSON Schema properties")
+            converted["properties"] = {name: convert(value) for name, value in properties.items()}
+        if "items" in node:
+            converted["items"] = convert(node["items"])
+        return converted
+
+    converted_schema = convert(response_schema)
+    if not isinstance(converted_schema, dict):  # defensive: the root contract must be an object
+        raise ProviderError("Gemini provider requires an object JSON Schema")
+    return converted_schema
+
+
+@dataclass(frozen=True)
+class GeminiGenerateContentProvider:
+    """Gemini GenerateContent adapter using server-side JSON Schema output."""
+
+    model: str
+    base_url: str
+    api_key: str
+    input_usd_per_million: float = 0.0
+    output_usd_per_million: float = 0.0
+    max_output_tokens: int = 800
+
+    @property
+    def name(self) -> str:
+        return self.model
+
+    def build_payload(self, *, system_prompt: str, email_text: str, response_schema: dict) -> dict:
+        return {
+            "systemInstruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": email_text}]}],
+            "generationConfig": {
+                "temperature": 0,
+                "maxOutputTokens": self.max_output_tokens,
+                "responseMimeType": "application/json",
+                "responseSchema": _gemini_response_schema(response_schema),
+            },
+        }
+
+    def generate(self, *, system_prompt: str, email_text: str, response_schema: dict) -> ProviderResponse:
+        payload = self.build_payload(
+            system_prompt=system_prompt,
+            email_text=email_text,
+            response_schema=response_schema,
+        )
+        endpoint = f"{self.base_url.rstrip('/')}/models/{quote(self.model, safe='')}:generateContent"
+        request = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
+            method="POST",
+        )
+        started = time.perf_counter()
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:  # nosec B310 - configured endpoint
+                decoded = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise ProviderError(
+                f"Gemini provider rejected the request with HTTP {exc.code}: {_error_detail(exc)}",
+                latency_ms=(time.perf_counter() - started) * 1_000,
+            ) from exc
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ProviderError(
+                f"Gemini provider failed: {exc}", latency_ms=(time.perf_counter() - started) * 1_000
+            ) from exc
+
+        elapsed_ms = (time.perf_counter() - started) * 1_000
+        try:
+            candidate = decoded["candidates"][0]
+            if candidate.get("finishReason") in {"MAX_TOKENS", "LENGTH"}:
+                raise ProviderError("Gemini provider output was truncated", latency_ms=elapsed_ms)
+            parts = candidate["content"]["parts"]
+            content = "".join(part["text"] for part in parts if isinstance(part, dict) and "text" in part)
+            if not content:
+                raise TypeError("candidate included no text parts")
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ProviderError(
+                "Gemini provider response did not include a text message", latency_ms=elapsed_ms
+            ) from exc
+
+        usage_raw = decoded.get("usageMetadata", {})
+        input_tokens = int(usage_raw.get("promptTokenCount", 0) or 0)
+        output_tokens = int(usage_raw.get("candidatesTokenCount", 0) or 0)
+        cost = (
+            input_tokens * self.input_usd_per_million + output_tokens * self.output_usd_per_million
+        ) / 1_000_000
+        return ProviderResponse(
+            model_name=self.name,
+            content=content,
+            latency_ms=elapsed_ms,
+            usage=Usage(input_tokens=input_tokens, output_tokens=output_tokens, cost_usd=cost),
+        )
+
+
 def provider_from_spec(spec: str) -> TriageProvider:
-    """Create providers: demo-*, compatible:<model>, deepseek:<model>."""
+    """Create providers: demo-*, gpt:<model>, deepseek:<model>, gemini:<model>."""
 
     if spec in {"demo-fast", "demo-conservative"}:
         return DemoRuleBasedProvider(profile=spec.removeprefix("demo-"))
@@ -275,6 +429,20 @@ def provider_from_spec(spec: str) -> TriageProvider:
             input_usd_per_million=float(os.getenv("OPENAI_COMPATIBLE_INPUT_USD_PER_MILLION", "0")),
             output_usd_per_million=float(os.getenv("OPENAI_COMPATIBLE_OUTPUT_USD_PER_MILLION", "0")),
         )
+    if spec.startswith("gpt:"):
+        model = spec.split(":", 1)[1].strip()
+        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not model or not api_key:
+            raise ProviderError("gpt:<model> requires OPENAI_API_KEY")
+        _validate_base_url(base_url)
+        return OpenAICompatibleProvider(
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            input_usd_per_million=float(os.getenv("OPENAI_INPUT_USD_PER_MILLION", "0")),
+            output_usd_per_million=float(os.getenv("OPENAI_OUTPUT_USD_PER_MILLION", "0")),
+        )
     if spec.startswith("deepseek:"):
         model = spec.split(":", 1)[1].strip()
         base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
@@ -292,5 +460,21 @@ def provider_from_spec(spec: str) -> TriageProvider:
             input_usd_per_million=float(os.getenv("DEEPSEEK_INPUT_USD_PER_MILLION", "0")),
             output_usd_per_million=float(os.getenv("DEEPSEEK_OUTPUT_USD_PER_MILLION", "0")),
             structured_output_mode=StructuredOutputMode.JSON_OBJECT,
+        )
+    if spec.startswith("gemini:"):
+        model = spec.split(":", 1)[1].strip()
+        base_url = os.environ.get(
+            "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
+        ).strip()
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not model or not api_key:
+            raise ProviderError("gemini:<model> requires GEMINI_API_KEY")
+        _validate_base_url(base_url)
+        return GeminiGenerateContentProvider(
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            input_usd_per_million=float(os.getenv("GEMINI_INPUT_USD_PER_MILLION", "0")),
+            output_usd_per_million=float(os.getenv("GEMINI_OUTPUT_USD_PER_MILLION", "0")),
         )
     raise ProviderError(f"Unknown provider spec: {spec}")
