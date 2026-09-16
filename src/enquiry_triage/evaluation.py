@@ -149,6 +149,7 @@ def evaluate_agent(agent: TriageAgent, inquiries: Iterable[Inquiry]) -> dict[str
 
     raw_records: list[dict[str, Any]] = []
     for inquiry in inquiries:
+        print(f"Evaluating {agent.provider.name} on inquiry {inquiry.id}")
         attempt = agent.triage(inquiry)
         result = attempt.result
         valid = attempt.is_valid and result is not None
@@ -163,6 +164,7 @@ def evaluate_agent(agent: TriageAgent, inquiries: Iterable[Inquiry]) -> dict[str
                 "split": inquiry.split,
                 "valid": valid,
                 "validation_error": attempt.validation_error,
+                "failure_detail": attempt.failure_detail,
                 "expected_case_type": expected_case_type,
                 "actual_case_type": result.case_type.value if result else None,
                 "expected_priority": expected_priority,

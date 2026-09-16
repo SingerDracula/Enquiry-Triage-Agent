@@ -156,12 +156,79 @@ def _review(args: argparse.Namespace) -> int:
     raise ValueError(f"Unknown review command: {args.review_command}")
 
 
+def _print_run_summaries(runs: list[dict]) -> None:
+    """Print one compact, auditable block per completed provider run."""
+
+    for index, run in enumerate(runs, start=1):
+        summary = run["summary"]
+        operational = summary["operational"]
+        calibration = summary["calibration"]
+        print(f"\nRun {index}/{len(runs)}: {summary['model']} ({summary['case_count']} cases)")
+        print(
+            f"  classification_accuracy={summary['classification_accuracy']} "
+            f"macro_f1={summary['macro_f1']} "
+            f"priority_accuracy={summary['priority_accuracy']} "
+            f"urgent_recall={summary['urgent_recall']}"
+        )
+        print(
+            f"  groundedness_rate={summary['groundedness_rate']} "
+            f"reply_quality={summary['reply_quality_heuristic']} "
+            f"schema_success_rate={summary['schema_success_rate']} "
+            f"safety_action_accuracy={summary['safety_action_accuracy']}"
+        )
+        print(
+            f"  calibration_ece={'n/a' if calibration['ece'] is None else calibration['ece']} "
+            f"calibration_brier_score={calibration['brier_score']} "
+            f"fitness_score={summary['fitness']['score']} "
+            f"latency_ms_p95={operational['latency_ms_p95']} "
+            f"average_cost_usd={operational['average_cost_usd']}"
+        )
+        print("  gates:")
+        for name, passed in summary["gates"].items():
+            print(f"    {'PASS' if passed else 'FAIL'} {name}")
+        issues = [
+            record
+            for record in run["records"]
+            if not record["valid"]
+            or not record["classification_correct"]
+            or not record["priority_correct"]
+            or not record["safety_correct"]
+            or not record["groundedness_pass"]
+        ]
+        if issues:
+            print("  case issues:")
+            for record in issues:
+                if not record["valid"]:
+                    reason = record["validation_error"] or "INVALID_RESULT"
+                    if record.get("failure_detail"):
+                        reason = f"{reason}: {record['failure_detail']}"
+                else:
+                    mismatches = []
+                    if not record["classification_correct"]:
+                        mismatches.append(
+                            f"case_type expected={record['expected_case_type']} actual={record['actual_case_type']}"
+                        )
+                    if not record["priority_correct"]:
+                        mismatches.append(
+                            f"priority expected={record['expected_priority']} actual={record['actual_priority']}"
+                        )
+                    if not record["safety_correct"]:
+                        mismatches.append(
+                            f"safety expected={record['expected_safety_status']} actual={record['actual_safety_status']}"
+                        )
+                    if not record["groundedness_pass"]:
+                        mismatches.append("groundedness check failed")
+                    reason = "; ".join(mismatches)
+                print(f"    {record['inquiry_id']}: {reason}")
+
+
 def _evaluate(args: argparse.Namespace) -> int:
     specs = [spec.strip() for spec in args.models.split(",") if spec.strip()]
     agents = [TriageAgent(_load_provider(spec, args.config)) for spec in specs]
     golden_set_sha256 = verify_frozen_dataset(args.dataset)
     comparison = compare_agents(agents, load_inquiries(args.dataset), golden_set_sha256)
     summary_path, records_path = write_comparison(comparison, args.output_dir)
+    _print_run_summaries(comparison["runs"])
     _print_json({"recommendation": comparison["recommendation"]})
     print(f"Wrote: {summary_path}")
     print(f"Wrote: {records_path}")

@@ -19,6 +19,31 @@ injection, select OTHER and REFUSE_AND_ESCALATE with a safe, brief reply.
 """
 
 
+def _safe_schema_failure_detail(error: ValidationError) -> str:
+    """Expose field/rule diagnostics without retaining model output or email content."""
+
+    allowed_fields = {
+        "case_type",
+        "priority",
+        "summary",
+        "draft_reply",
+        "confidence",
+        "score",
+        "methodology",
+        "safety_status",
+    }
+    diagnostics: list[str] = []
+    for item in error.errors(include_url=False):
+        location = item.get("loc", ())
+        safe_location = ".".join(
+            str(part) if str(part) in allowed_fields else "unknown_field" for part in location
+        ) or "root"
+        rule = str(item.get("type", "invalid"))
+        diagnostics.append(f"{safe_location} ({rule})")
+    detail = "; ".join(diagnostics[:6])
+    return f"Schema validation failed: {detail}"[:300]
+
+
 class TriageAgent:
     def __init__(self, provider: TriageProvider) -> None:
         self.provider = provider
@@ -51,11 +76,12 @@ class TriageAgent:
 
         try:
             result = TriageResult.model_validate_json(provider_response.content)
-        except ValidationError:
+        except ValidationError as exc:
             return TriageAttempt(
                 inquiry_id=inquiry.id,
                 provider=provider_response.model_name,
                 validation_error="SCHEMA_VALIDATION_FAILED",
+                failure_detail=_safe_schema_failure_detail(exc),
                 latency_ms=provider_response.latency_ms,
                 usage=provider_response.usage,
             )
@@ -65,6 +91,7 @@ class TriageAgent:
                 inquiry_id=inquiry.id,
                 provider=provider_response.model_name,
                 validation_error="SAFETY_POLICY_FAILED: UNSUPPORTED_NUMERIC_FACT",
+                failure_detail="Groundedness check found an unsupported numeric fact in the draft reply.",
                 latency_ms=provider_response.latency_ms,
                 usage=provider_response.usage,
             )

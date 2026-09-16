@@ -75,6 +75,8 @@ class AgentTests(unittest.TestCase):
         self.assertIsNone(attempt.result)
         self.assertIn("SCHEMA_VALIDATION_FAILED", attempt.validation_error or "")
         self.assertNotIn("POL-SECRET-481", attempt.validation_error or "")
+        self.assertIn("case_type (enum)", attempt.failure_detail or "")
+        self.assertNotIn("POL-SECRET-481", attempt.failure_detail or "")
 
     def test_prompt_injection_is_refused(self) -> None:
         inquiry = Inquiry(
@@ -96,6 +98,7 @@ class AgentTests(unittest.TestCase):
 
         self.assertFalse(attempt.is_valid)
         self.assertEqual(attempt.validation_error, "SAFETY_POLICY_FAILED: UNSUPPORTED_NUMERIC_FACT")
+        self.assertIn("unsupported numeric fact", attempt.failure_detail or "")
 
     def test_provider_failure_reports_reason_and_latency(self) -> None:
         attempt = TriageAgent(RejectingProvider()).triage(Inquiry(id="case-005", body="Hello"))

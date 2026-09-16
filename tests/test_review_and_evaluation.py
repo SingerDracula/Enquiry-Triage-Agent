@@ -55,6 +55,7 @@ class ReviewAndEvaluationTests(unittest.TestCase):
         self.assertEqual(len(comparison["runs"]), 2)
         self.assertEqual(len(comparison["golden_ids"]), len(golden))
         self.assertIn("fitness", comparison["runs"][0]["summary"])
+        self.assertIn("failure_detail", comparison["runs"][0]["records"][0])
         with tempfile.TemporaryDirectory() as directory:
             summary, records = write_comparison(comparison, Path(directory))
             self.assertTrue(summary.is_file())
