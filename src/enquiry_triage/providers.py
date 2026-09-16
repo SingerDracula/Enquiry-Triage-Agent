@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Protocol
 from urllib.parse import quote, urlparse
 
@@ -408,73 +409,82 @@ class GeminiGenerateContentProvider:
         )
 
 
-def provider_from_spec(spec: str) -> TriageProvider:
-    """Create providers: demo-*, gpt:<model>, deepseek:<model>, gemini:<model>."""
+def _load_provider_settings(config_path: Path) -> dict[str, dict[str, object]]:
+    """Load a private TOML config without ever placing its secrets in errors."""
+
+    if not config_path.is_file():
+        raise ProviderError(
+            f"Provider config not found: {config_path}. Copy config.example.toml to config.toml and add your key."
+        )
+    try:
+        raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ProviderError(f"Could not read provider config: {exc}") from exc
+    providers = raw.get("providers")
+    if not isinstance(providers, dict):
+        raise ProviderError("Provider config must contain [providers.<name>] sections")
+    return {name: value for name, value in providers.items() if isinstance(name, str) and isinstance(value, dict)}
+
+
+def _required_string(settings: dict[str, object], key: str, provider_name: str) -> str:
+    value = settings.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ProviderError(f"Provider '{provider_name}' requires a non-empty '{key}' in config.toml")
+    return value.strip()
+
+
+def _optional_string(settings: dict[str, object], key: str, default: str, provider_name: str) -> str:
+    value = settings.get(key, default)
+    if not isinstance(value, str) or not value.strip():
+        raise ProviderError(f"Provider '{provider_name}' has an invalid '{key}' in config.toml")
+    return value.strip()
+
+
+def _price(settings: dict[str, object], key: str, provider_name: str) -> float:
+    value = settings.get(key, 0)
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        raise ProviderError(f"Provider '{provider_name}' has an invalid non-negative '{key}' in config.toml")
+    return float(value)
+
+
+def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageProvider:
+    """Create a demo provider or a named provider configured in private TOML."""
 
     if spec in {"demo-fast", "demo-conservative"}:
         return DemoRuleBasedProvider(profile=spec.removeprefix("demo-"))
-    if spec.startswith("compatible:"):
-        model = spec.split(":", 1)[1].strip()
-        base_url = os.environ.get("OPENAI_COMPATIBLE_BASE_URL", "").strip()
-        api_key = os.environ.get("OPENAI_COMPATIBLE_API_KEY", "").strip()
-        if not model or not base_url or not api_key:
-            raise ProviderError(
-                "compatible:<model> requires OPENAI_COMPATIBLE_BASE_URL and OPENAI_COMPATIBLE_API_KEY"
-            )
-        _validate_base_url(base_url)
-        return OpenAICompatibleProvider(
-            model=model,
-            base_url=base_url,
-            api_key=api_key,
-            input_usd_per_million=float(os.getenv("OPENAI_COMPATIBLE_INPUT_USD_PER_MILLION", "0")),
-            output_usd_per_million=float(os.getenv("OPENAI_COMPATIBLE_OUTPUT_USD_PER_MILLION", "0")),
+    if ":" in spec or spec not in {"gpt", "deepseek", "gemini", "compatible"}:
+        raise ProviderError("Unknown provider. Use demo-fast, demo-conservative, gpt, deepseek, gemini, or compatible.")
+
+    settings_by_name = _load_provider_settings(config_path or Path.cwd() / "config.toml")
+    settings = settings_by_name.get(spec)
+    if settings is None:
+        raise ProviderError(f"Provider '{spec}' is missing [providers.{spec}] in config.toml")
+    model = _required_string(settings, "model", spec)
+    api_key = _required_string(settings, "api_key", spec)
+
+    if spec == "gemini":
+        base_url = _optional_string(
+            settings, "base_url", "https://generativelanguage.googleapis.com/v1beta", spec
         )
-    if spec.startswith("gpt:"):
-        model = spec.split(":", 1)[1].strip()
-        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
-        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-        if not model or not api_key:
-            raise ProviderError("gpt:<model> requires OPENAI_API_KEY")
-        _validate_base_url(base_url)
-        return OpenAICompatibleProvider(
-            model=model,
-            base_url=base_url,
-            api_key=api_key,
-            input_usd_per_million=float(os.getenv("OPENAI_INPUT_USD_PER_MILLION", "0")),
-            output_usd_per_million=float(os.getenv("OPENAI_OUTPUT_USD_PER_MILLION", "0")),
-        )
-    if spec.startswith("deepseek:"):
-        model = spec.split(":", 1)[1].strip()
-        base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
-        api_key = (
-            os.environ.get("DEEPSEEK_API_KEY", "").strip()
-            or os.environ.get("OPENAI_COMPATIBLE_API_KEY", "").strip()
-        )
-        if not model or not api_key:
-            raise ProviderError("deepseek:<model> requires DEEPSEEK_API_KEY")
-        _validate_base_url(base_url)
-        return OpenAICompatibleProvider(
-            model=model,
-            base_url=base_url,
-            api_key=api_key,
-            input_usd_per_million=float(os.getenv("DEEPSEEK_INPUT_USD_PER_MILLION", "0")),
-            output_usd_per_million=float(os.getenv("DEEPSEEK_OUTPUT_USD_PER_MILLION", "0")),
-            structured_output_mode=StructuredOutputMode.JSON_OBJECT,
-        )
-    if spec.startswith("gemini:"):
-        model = spec.split(":", 1)[1].strip()
-        base_url = os.environ.get(
-            "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
-        ).strip()
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not model or not api_key:
-            raise ProviderError("gemini:<model> requires GEMINI_API_KEY")
         _validate_base_url(base_url)
         return GeminiGenerateContentProvider(
             model=model,
             base_url=base_url,
             api_key=api_key,
-            input_usd_per_million=float(os.getenv("GEMINI_INPUT_USD_PER_MILLION", "0")),
-            output_usd_per_million=float(os.getenv("GEMINI_OUTPUT_USD_PER_MILLION", "0")),
+            input_usd_per_million=_price(settings, "input_usd_per_million", spec),
+            output_usd_per_million=_price(settings, "output_usd_per_million", spec),
         )
-    raise ProviderError(f"Unknown provider spec: {spec}")
+
+    default_base_url = "https://api.openai.com/v1" if spec == "gpt" else ""
+    base_url = _optional_string(settings, "base_url", default_base_url, spec)
+    _validate_base_url(base_url)
+    return OpenAICompatibleProvider(
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        input_usd_per_million=_price(settings, "input_usd_per_million", spec),
+        output_usd_per_million=_price(settings, "output_usd_per_million", spec),
+        structured_output_mode=(
+            StructuredOutputMode.JSON_OBJECT if spec == "deepseek" else StructuredOutputMode.JSON_SCHEMA_STRICT
+        ),
+    )

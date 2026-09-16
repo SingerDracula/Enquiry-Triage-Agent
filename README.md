@@ -47,44 +47,41 @@ PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v
 
 Provider URLs must use HTTPS (plain HTTP is accepted only for localhost development). Prices are configuration values, not hard-coded assumptions; record the values used for each evaluation.
 
-| Provider | CLI spec | Environment variable | Structured-output strategy |
+| Provider | CLI spec | Configuration section | Structured-output strategy |
 | --- | --- | --- | --- |
-| OpenAI GPT | `gpt:<model>` | `OPENAI_API_KEY` | Chat Completions strict JSON Schema |
-| DeepSeek | `deepseek:<model>` | `DEEPSEEK_API_KEY` | JSON Object mode, explicit prompt contract, then local validation |
-| Google Gemini | `gemini:<model>` | `GEMINI_API_KEY` | GenerateContent JSON Schema, then local validation |
+| OpenAI GPT | `gpt` | `[providers.gpt]` | Chat Completions strict JSON Schema |
+| DeepSeek | `deepseek` | `[providers.deepseek]` | JSON Object mode, explicit prompt contract, then local validation |
+| Google Gemini | `gemini` | `[providers.gemini]` | GenerateContent JSON Schema, then local validation |
 
-Use the safe provider-specific templates instead of adding a key to source control:
+Copy the versioned template to the private configuration file, then set the model ID and API key there. `config.toml` is ignored by Git, so it will not be committed.
 
 ```bash
-cp .env.gpt.example .env.gpt
-cp .env.deepseek.example .env.deepseek
-cp .env.gemini.example .env.gemini
-set -a; source .env.gpt; set +a
+cp config.example.toml config.toml
 ```
 
-Run a real-provider comparison by replacing each placeholder model ID with a model available to your account:
+Run a real-provider comparison after setting the three model IDs in `config.toml`:
 
 ```bash
 .venv/bin/triage-agent evaluate \
-  --models gpt:your-gpt-model,deepseek:your-deepseek-model,gemini:your-gemini-model
+  --models gpt,deepseek,gemini
 ```
 
-For DeepSeek Chat Completions, use `.env.deepseek.example` as a safe template, export its variables, then choose `deepseek:<model>`. This sends `response_format={"type":"json_object"}` and embeds the required JSON Schema and example in the system prompt. The response still must pass local Pydantic validation and safety checks before it can be reviewed.
+For DeepSeek Chat Completions, choose `deepseek`. This sends `response_format={"type":"json_object"}` and embeds the required JSON Schema and example in the system prompt. The response still must pass local Pydantic validation and safety checks before it can be reviewed.
 
-`compatible:<model>` is for endpoints that accept `response_format={"type":"json_schema", ...}`. DeepSeek rejects that mode with HTTP 400 ("This response_format type is unavailable now"), so pointing `compatible:` at a DeepSeek base URL always fails. Use the `deepseek:` spec instead; the failure output names the HTTP status and the provider's error message so a mismatch is diagnosable.
+`compatible` is for endpoints that accept `response_format={"type":"json_schema", ...}`. DeepSeek rejects that mode with HTTP 400 ("This response_format type is unavailable now"), so pointing `compatible` at a DeepSeek base URL always fails. Use `deepseek` instead; the failure output names the HTTP status and the provider's error message so a mismatch is diagnosable.
 
 ```bash
 .venv/bin/triage-agent triage data/example_email.txt \
-  --provider deepseek:your-model-id
+  --provider deepseek
 
 .venv/bin/triage-agent triage data/example_email.txt \
-  --provider gpt:your-model-id
+  --provider gpt
 
 .venv/bin/triage-agent triage data/example_email.txt \
-  --provider gemini:your-model-id
+  --provider gemini
 ```
 
-`compatible:<model>` remains available for another OpenAI-compatible endpoint that supports strict JSON Schema. Do not route a provider through the wrong adapter: DeepSeek uses JSON Object mode, while Gemini uses its GenerateContent endpoint.
+`compatible` remains available for another OpenAI-compatible endpoint that supports strict JSON Schema. Do not route a provider through the wrong adapter: DeepSeek uses JSON Object mode, while Gemini uses its GenerateContent endpoint. Use `--config /path/to/config.toml` if the private file is not in the current directory.
 
 The two model identifiers must be genuinely distinct models, tiers, or providers. The default `demo-fast,demo-conservative` command validates the evaluation pipeline only; it must not be presented as a two-LLM case-study comparison.
 

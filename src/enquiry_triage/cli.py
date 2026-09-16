@@ -47,15 +47,24 @@ def _print_json(value: object) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
 
-def _load_provider(spec: str):
+def _load_provider(spec: str, config_path: Path):
     try:
-        return provider_from_spec(spec)
+        return provider_from_spec(spec, config_path=config_path)
     except ProviderError as exc:
         raise ValueError(f"Provider configuration error: {exc}") from exc
 
 
 def _add_database_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--database", type=Path, default=DEFAULT_DB, help="SQLite review queue path")
+
+
+def _add_config_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config.toml"),
+        help="Private provider TOML configuration path (default: config.toml)",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -72,8 +81,9 @@ def build_parser() -> argparse.ArgumentParser:
     triage_parser.add_argument(
         "--provider",
         default="demo-fast",
-        help="demo-fast, demo-conservative, gpt:<model>, deepseek:<model>, gemini:<model>, compatible:<model>",
+        help="demo-fast, demo-conservative, gpt, deepseek, gemini, or compatible",
     )
+    _add_config_option(triage_parser)
     triage_parser.add_argument("--no-queue", action="store_true", help="Do not store a pending local review")
     _add_database_option(triage_parser)
 
@@ -92,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     evaluate_parser = commands.add_parser("evaluate", help="Compare at least two providers on frozen golden data")
     evaluate_parser.add_argument("--models", default="demo-fast,demo-conservative")
+    _add_config_option(evaluate_parser)
     evaluate_parser.add_argument("--dataset", type=Path, default=DEFAULT_GOLDEN_SET)
     evaluate_parser.add_argument("--output-dir", type=Path, default=DEFAULT_RESULTS)
     return parser
@@ -105,7 +116,7 @@ def _triage(args: argparse.Namespace) -> int:
         subject=args.subject,
         body=args.email_file.read_text(encoding="utf-8"),
     )
-    attempt = TriageAgent(_load_provider(args.provider)).triage(inquiry)
+    attempt = TriageAgent(_load_provider(args.provider, args.config)).triage(inquiry)
     if not attempt.is_valid:
         failure_payload = attempt.model_dump(mode="json")
         _print_json(failure_payload)
@@ -147,7 +158,7 @@ def _review(args: argparse.Namespace) -> int:
 
 def _evaluate(args: argparse.Namespace) -> int:
     specs = [spec.strip() for spec in args.models.split(",") if spec.strip()]
-    agents = [TriageAgent(_load_provider(spec)) for spec in specs]
+    agents = [TriageAgent(_load_provider(spec, args.config)) for spec in specs]
     golden_set_sha256 = verify_frozen_dataset(args.dataset)
     comparison = compare_agents(agents, load_inquiries(args.dataset), golden_set_sha256)
     summary_path, records_path = write_comparison(comparison, args.output_dir)

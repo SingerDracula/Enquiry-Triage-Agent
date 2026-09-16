@@ -4,6 +4,7 @@ build/
 __pycache__/
 *.py[cod]
 .env
+config.toml
 review_queue.db
 results/*.json
 results/*.csv
