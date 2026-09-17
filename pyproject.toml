@@ -46,4 +46,4 @@ target-version = "py311"
 select = ["E", "F", "I", "UP"]
 
 [tool.vercel]
-entrypoint = "src/enquiry_triage/web:app"
+entrypoint = "src.enquiry_triage.__main__:app"
