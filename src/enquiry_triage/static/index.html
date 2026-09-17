@@ -79,7 +79,7 @@
         </section>
 
         <section v-else class="card">
-          <h2>Evaluate providers</h2><p class="muted">Runs the frozen 30-case golden set. Each selected provider must be configured in private <code>config.toml</code>. Real provider calls can incur cost.</p>
+          <h2>Evaluate providers</h2><p class="muted">Runs the frozen 30-case golden set and saves JSON/CSV files in the project's <code>evaluation_results/</code> folder. Each selected provider must be configured in private <code>config.toml</code>. Real provider calls can incur cost.</p>
           <div class="grid"><label v-for="provider in providers" :key="provider" class="check"><input type="checkbox" :value="provider" v-model="evaluationProviders" /> {{ provider }}</label></div>
           <div class="actions"><button :disabled="busy" @click="runEvaluation">{{ busy ? 'Running evaluation…' : 'Evaluate selected providers' }}</button></div>
           <template v-if="evaluation"><div class="notice">Artifacts saved: {{ evaluation.artifacts.summary }}</div>

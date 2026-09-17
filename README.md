@@ -31,7 +31,7 @@ Run a local demo triage. It writes a pending review record but does not send any
 .venv/bin/triage-agent review decide 1 ACCEPTED
 ```
 
-Run the offline comparison and create auditable JSON/CSV artifacts under `results/`:
+Run the offline comparison and create auditable JSON/CSV artifacts under the project's `evaluation_results/` folder:
 
 ```bash
 .venv/bin/triage-agent evaluate
@@ -52,7 +52,7 @@ Start the local FastAPI and Vue UI after installing the updated dependencies:
 .venv/bin/triage-web
 ```
 
-Open `http://127.0.0.1:8000`. The page accepts an email subject/body for triage, lets a reviewer accept, edit-and-accept, or discard queued drafts, and runs provider evaluations. After evaluation, it lists every case for each provider with pass/fail status, expected and actual labels, validation/grounding results, confidence, reply-quality heuristic, latency, and failure reason; the list can be filtered to passed or failed cases. The server binds only to localhost, reads model settings from private `config.toml`, and never sends email.
+Open `http://127.0.0.1:8000`. The page accepts an email subject/body for triage, lets a reviewer accept, edit-and-accept, or discard queued drafts, and runs provider evaluations. After evaluation, it lists every case for each provider with pass/fail status, expected and actual labels, validation/grounding results, confidence, reply-quality heuristic, latency, and failure reason; the list can be filtered to passed or failed cases. Evaluation JSON/CSV files are saved in the project's `evaluation_results/` folder. The server binds only to localhost, reads model settings from private `config.toml`, and never sends email.
 
 ## Real LLM comparison
 
@@ -136,10 +136,11 @@ Suggested human-assisted pilot gates are in the generated `gates` section: 100% 
 src/enquiry_triage/  Agent, models, providers, review store, CLI, evaluation
 data/                Synthetic development set, frozen golden set, integrity hash
 tests/               Offline schema, safety, data, review, and evaluation tests
-results/             Optional project-local comparison artifacts (ignored by Git)
+evaluation_results/  Project-local comparison JSON/CSV artifacts (available to commit)
+results/             Legacy optional output directory (ignored by Git)
 docs/                Case-study write-up and implementation notes
 ```
 
-By default, installed CLI state and generated results use a private user application-data directory. Set `AI_TRIAGE_DATA_DIR` to choose another private location, or pass `--database` / `--output-dir` explicitly.
+By default, the review database uses a private user application-data directory, while evaluation artifacts are written to `evaluation_results/` in the source project (or the current directory when installed outside the source tree). Set `AI_TRIAGE_DATA_DIR` to choose another review-database location, or pass `--database` / `--output-dir` explicitly. Evaluation results are not Git-ignored; review their contents before committing them.
 
 See [docs/CASE_STUDY_WRITEUP.md](docs/CASE_STUDY_WRITEUP.md) for the concise architecture, trade-offs, evaluation design, and next steps.

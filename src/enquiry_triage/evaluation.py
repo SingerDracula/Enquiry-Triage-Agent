@@ -16,6 +16,15 @@ from .models import CaseType, Inquiry, Priority, SafetyStatus, TriageAttempt
 from .policies import groundedness_passes
 
 
+def default_results_dir() -> Path:
+    """Keep evaluation artifacts in the source project when running from this repository."""
+
+    project_root = Path(__file__).resolve().parents[2]
+    if (project_root / "pyproject.toml").is_file():
+        return project_root / "evaluation_results"
+    return Path.cwd() / "evaluation_results"
+
+
 def load_inquiries(path: Path) -> list[Inquiry]:
     inquiries: list[Inquiry] = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):

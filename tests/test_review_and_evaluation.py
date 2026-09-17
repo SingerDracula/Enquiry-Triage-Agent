@@ -6,10 +6,12 @@ import os
 from pathlib import Path
 
 from enquiry_triage.agent import TriageAgent
-from enquiry_triage.evaluation import compare_agents, load_inquiries, write_comparison
+from enquiry_triage.cli import build_parser
+from enquiry_triage.evaluation import compare_agents, default_results_dir, load_inquiries, write_comparison
 from enquiry_triage.models import Inquiry, ProviderResponse, ReviewDecision, Usage
 from enquiry_triage.providers import DemoRuleBasedProvider
 from enquiry_triage.review import ReviewError, ReviewStore
+from enquiry_triage.web import DEFAULT_RESULTS as WEB_DEFAULT_RESULTS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +25,12 @@ class BrokenProvider:
 
 
 class ReviewAndEvaluationTests(unittest.TestCase):
+    def test_cli_and_web_save_evaluations_in_project_folder_by_default(self) -> None:
+        expected = ROOT / "evaluation_results"
+        self.assertEqual(default_results_dir(), expected)
+        self.assertEqual(build_parser().parse_args(["evaluate"]).output_dir, expected)
+        self.assertEqual(WEB_DEFAULT_RESULTS, expected)
+
     def test_review_requires_valid_attempt_and_never_sends(self) -> None:
         inquiry = Inquiry(id="review-001", body="Please explain my policy coverage.")
         attempt = TriageAgent(DemoRuleBasedProvider()).triage(inquiry)

@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .agent import TriageAgent
-from .evaluation import compare_agents, load_inquiries, verify_frozen_dataset, write_comparison
+from .evaluation import compare_agents, default_results_dir, load_inquiries, verify_frozen_dataset, write_comparison
 from .models import Inquiry, ReviewDecision
 from .providers import ProviderError, provider_from_spec
 from .review import ReviewError, ReviewStore
@@ -39,7 +39,7 @@ def _default_golden_set() -> Path:
 
 APP_STATE_DIR = _app_state_dir()
 DEFAULT_DB = APP_STATE_DIR / "review_queue.db"
-DEFAULT_RESULTS = APP_STATE_DIR / "results"
+DEFAULT_RESULTS = default_results_dir()
 DEFAULT_GOLDEN_SET = _default_golden_set()
 DEFAULT_CONFIG = Path(os.getenv("AI_TRIAGE_CONFIG", "config.toml"))
 STATIC_DIR = Path(__file__).with_name("static")

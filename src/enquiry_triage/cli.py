@@ -11,7 +11,7 @@ import sysconfig
 from typing import Sequence
 
 from .agent import TriageAgent
-from .evaluation import compare_agents, load_inquiries, verify_frozen_dataset, write_comparison
+from .evaluation import compare_agents, default_results_dir, load_inquiries, verify_frozen_dataset, write_comparison
 from .models import Inquiry, ReviewDecision
 from .providers import ProviderError, provider_from_spec
 from .review import ReviewError, ReviewStore
@@ -38,7 +38,7 @@ def _default_golden_set() -> Path:
 APP_STATE_DIR = _app_state_dir()
 DEFAULT_DB = APP_STATE_DIR / "review_queue.db"
 DEFAULT_GOLDEN_SET = _default_golden_set()
-DEFAULT_RESULTS = APP_STATE_DIR / "results"
+DEFAULT_RESULTS = default_results_dir()
 
 
 def _print_json(value: object) -> None:
