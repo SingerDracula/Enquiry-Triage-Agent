@@ -88,6 +88,55 @@ class ProviderPayloadTests(unittest.TestCase):
         self.assertEqual(provider.base_url, "https://api.openai.com/v1")
         self.assertEqual(provider.structured_output_mode, StructuredOutputMode.JSON_SCHEMA_STRICT)
 
+    def test_glm_spec_uses_official_endpoint_and_json_object_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.toml"
+            config_path.write_text(
+                '[providers.glm]\nmodel = "glm-4.7-flash"\napi_key = "test-key"\n',
+                encoding="utf-8",
+            )
+            provider = provider_from_spec("glm", config_path=config_path)
+
+        self.assertIsInstance(provider, OpenAICompatibleProvider)
+        self.assertEqual(provider.base_url, "https://open.bigmodel.cn/api/paas/v4")
+        self.assertEqual(provider.structured_output_mode, StructuredOutputMode.JSON_OBJECT)
+        payload = provider.build_payload(
+            system_prompt="Return JSON.", email_text="Subject: test", response_schema=json_schema()
+        )
+        self.assertEqual(payload["model"], "glm-4.7-flash")
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
+        self.assertEqual(payload["temperature"], 0.01)
+        self.assertEqual(payload["max_tokens"], 1024)
+        self.assertIn("JSON Schema", payload["messages"][0]["content"])
+
+    def test_glm_response_uses_existing_chat_completions_parser(self) -> None:
+        provider = OpenAICompatibleProvider(
+            model="glm-4.7-flash",
+            base_url="https://open.bigmodel.cn/api/paas/v4",
+            api_key="test-key",
+            structured_output_mode=StructuredOutputMode.JSON_OBJECT,
+            temperature=0.01,
+            thinking_mode="disabled",
+        )
+        fake_response = io.BytesIO(
+            b'{"choices":[{"finish_reason":"stop","message":{"content":"{\\"case_type\\":\\"OTHER\\"}"}}],'
+            b'"usage":{"prompt_tokens":10,"completion_tokens":20}}'
+        )
+
+        with patch("enquiry_triage.providers.urllib.request.urlopen", return_value=fake_response) as mocked:
+            response = provider.generate(
+                system_prompt="Return JSON.", email_text="Subject: test", response_schema=json_schema()
+            )
+
+        self.assertEqual(response.content, '{"case_type":"OTHER"}')
+        self.assertEqual(response.usage.input_tokens, 10)
+        self.assertEqual(response.usage.output_tokens, 20)
+        self.assertEqual(
+            mocked.call_args.args[0].full_url,
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        )
+
     def test_gemini_mode_sends_converted_json_schema(self) -> None:
         provider = GeminiGenerateContentProvider(
             model="gemini-test",

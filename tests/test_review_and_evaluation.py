@@ -56,6 +56,14 @@ class ReviewAndEvaluationTests(unittest.TestCase):
         self.assertEqual(len(comparison["golden_ids"]), len(golden))
         self.assertIn("fitness", comparison["runs"][0]["summary"])
         self.assertIn("failure_detail", comparison["runs"][0]["records"][0])
+        for run in comparison["runs"]:
+            self.assertEqual(len(run["records"]), len(golden))
+            for record in run["records"]:
+                self.assertIn("actual_case_type", record)
+                self.assertIn("actual_priority", record)
+                self.assertIn("actual_safety_status", record)
+                self.assertIn("groundedness_pass", record)
+                self.assertIn("reply_quality_score", record)
         with tempfile.TemporaryDirectory() as directory:
             summary, records = write_comparison(comparison, Path(directory))
             self.assertTrue(summary.is_file())

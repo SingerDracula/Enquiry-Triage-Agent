@@ -34,6 +34,8 @@
       .pill { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: .75rem; font-weight: 750; background: #e1effe; color: #075985; }
       .pill.fail { background: #fee2e2; color: #991b1b; } .pill.pass { background: #dcfce7; color: #166534; }
       table { width: 100%; border-collapse: collapse; font-size: .88rem; } th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e4ebf3; vertical-align: top; } th { color: #52667f; }
+      .case-table { min-width: 1000px; } .case-table td { overflow-wrap: anywhere; } .case-table .comparison { white-space: nowrap; }
+      .case-filter { width: auto; min-width: 125px; margin-left: auto; }
       .muted { color: #64748b; font-size: .88rem; } .wide { overflow-x: auto; } .check { display: flex; gap: 7px; align-items: center; font-weight: 500; margin-top: 12px; }
       .check input { width: auto; } .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, .9fr); gap: 16px; } @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
     </style>
@@ -84,8 +86,31 @@
             <div v-for="run in evaluation.comparison.runs" :key="run.summary.model" class="card" style="margin-top:16px">
               <h3>{{ run.summary.model }} <span class="pill" :class="{fail: !allGates(run), pass: allGates(run)}">{{ allGates(run) ? 'all gates pass' : 'gates failed' }}</span></h3>
               <div class="grid muted"><span>Classification: {{ percent(run.summary.classification_accuracy) }}</span><span>Priority: {{ percent(run.summary.priority_accuracy) }}</span><span>Schema: {{ percent(run.summary.schema_success_rate) }}</span><span>ECE: {{ run.summary.calibration.ece ?? 'n/a' }}</span></div>
-              <h3 style="margin-top:18px">Failing / mismatched cases</h3><p v-if="!issues(run).length" class="muted">None.</p>
-              <div v-else class="wide"><table><thead><tr><th>Case</th><th>Reason</th><th>Expected → actual</th></tr></thead><tbody><tr v-for="record in issues(run)" :key="record.inquiry_id"><td>{{ record.inquiry_id }}</td><td>{{ issueReason(record) }}</td><td>{{ record.expected_case_type }}/{{ record.expected_priority }} → {{ record.actual_case_type ?? '—' }}/{{ record.actual_priority ?? '—' }}</td></tr></tbody></table></div>
+              <div class="actions" style="margin-top:18px">
+                <h3 style="margin:0">Case results</h3>
+                <span class="muted">{{ passedCaseCount(run) }} passed · {{ run.records.length - passedCaseCount(run) }} failed · {{ run.records.length }} total</span>
+                <select class="case-filter" :aria-label="`Filter cases for ${run.summary.model}`" v-model="caseFilters[run.summary.model]">
+                  <option value="all">All cases</option><option value="pass">Passed only</option><option value="fail">Failed only</option>
+                </select>
+              </div>
+              <p class="muted">Expected → actual. Grounding is the current numeric-fact check; reply quality is a structural heuristic.</p>
+              <p v-if="!visibleCases(run).length" class="muted">No cases match this filter.</p>
+              <div v-else class="wide"><table class="case-table">
+                <thead><tr><th>Case</th><th>Result</th><th>Case type</th><th>Priority</th><th>Safety</th><th>Schema</th><th>Grounding</th><th>Confidence</th><th>Reply quality</th><th>Latency</th><th>Reason</th></tr></thead>
+                <tbody><tr v-for="record in visibleCases(run)" :key="record.inquiry_id">
+                  <td>{{ record.inquiry_id }}</td>
+                  <td><span class="pill" :class="casePassed(record) ? 'pass' : 'fail'">{{ casePassed(record) ? 'PASS' : 'FAIL' }}</span></td>
+                  <td class="comparison">{{ record.expected_case_type ?? '—' }} → {{ record.actual_case_type ?? '—' }}</td>
+                  <td class="comparison">{{ record.expected_priority ?? '—' }} → {{ record.actual_priority ?? '—' }}</td>
+                  <td class="comparison">{{ record.expected_safety_status ?? '—' }} → {{ record.actual_safety_status ?? '—' }}</td>
+                  <td>{{ record.valid ? 'PASS' : 'FAIL' }}</td>
+                  <td>{{ record.groundedness_pass ? 'PASS' : 'FAIL' }}</td>
+                  <td>{{ record.confidence == null ? '—' : record.confidence.toFixed(2) }}</td>
+                  <td>{{ percent(record.reply_quality_score) }}</td>
+                  <td>{{ record.latency_ms.toFixed(0) }} ms</td>
+                  <td>{{ casePassed(record) ? 'All checks passed' : issueReason(record) }}</td>
+                </tr></tbody>
+              </table></div>
             </div>
           </template>
         </section>
@@ -96,9 +121,9 @@
       createApp({
         data() { return {
           tabs: [{id:'triage',label:'Triage'}, {id:'review',label:'Review'}, {id:'evaluate',label:'Evaluate'}], tab:'triage',
-          providers:['demo-fast','demo-conservative','gpt','deepseek','gemini'], busy:false, error:'', notice:'',
+          providers:['demo-fast','demo-conservative','gpt','deepseek','gemini','glm'], busy:false, error:'', notice:'',
           triageForm:{subject:'',body:'',provider:'demo-fast',queue_for_review:true}, triageResult:null,
-          reviews:[], selectedReview:null, editedReply:'', evaluationProviders:['deepseek','gemini'], evaluation:null,
+          reviews:[], selectedReview:null, editedReply:'', evaluationProviders:['deepseek','gemini'], evaluation:null, caseFilters:{},
         }; },
         mounted() { this.loadReviews(); },
         methods: {
@@ -108,8 +133,10 @@
           async loadReviews() { this.clearMessage(); try { this.reviews=(await this.api('/api/reviews')).records; } catch (error) { this.error=error.message; } },
           selectReview(record) { this.selectedReview=record; this.editedReply=record.result.draft_reply; },
           async decide(decision) { if (!this.selectedReview) return; this.clearMessage(); this.busy=true; try { await this.api(`/api/reviews/${this.selectedReview.id}/decision`,{method:'POST',body:JSON.stringify({decision,edited_reply:decision==='EDITED_AND_ACCEPTED' ? this.editedReply : null})}); this.notice=`Review record #${this.selectedReview.id} updated. No email was sent.`; this.selectedReview=null; this.editedReply=''; await this.loadReviews(); } catch (error) { this.error=error.message; } finally { this.busy=false; } },
-          async runEvaluation() { this.clearMessage(); if (this.evaluationProviders.length < 2) { this.error='Choose at least two distinct providers.'; return; } this.busy=true; try { this.evaluation=await this.api('/api/evaluate',{method:'POST',body:JSON.stringify({providers:this.evaluationProviders})}); this.notice='Evaluation completed. Failure reasons are shown below.'; } catch (error) { this.error=error.message; } finally { this.busy=false; } },
-          issues(run) { return run.records.filter(record => !record.valid || !record.classification_correct || !record.priority_correct || !record.safety_correct || !record.groundedness_pass); },
+          async runEvaluation() { this.clearMessage(); if (this.evaluationProviders.length < 2) { this.error='Choose at least two distinct providers.'; return; } this.evaluation=null; this.caseFilters={}; this.busy=true; try { this.evaluation=await this.api('/api/evaluate',{method:'POST',body:JSON.stringify({providers:this.evaluationProviders})}); this.caseFilters=Object.fromEntries(this.evaluation.comparison.runs.map(run => [run.summary.model,'all'])); this.notice='Evaluation completed. All case results are shown below.'; } catch (error) { this.error=error.message; } finally { this.busy=false; } },
+          casePassed(record) { return record.valid && record.classification_correct && record.priority_correct && record.safety_correct && record.groundedness_pass; },
+          passedCaseCount(run) { return run.records.filter(record => this.casePassed(record)).length; },
+          visibleCases(run) { const filter=this.caseFilters[run.summary.model] || 'all'; return run.records.filter(record => filter === 'all' || this.casePassed(record) === (filter === 'pass')); },
           issueReason(record) { if (!record.valid) return `${record.validation_error || 'INVALID_RESULT'}${record.failure_detail ? ': ' + record.failure_detail : ''}`; const items=[]; if (!record.classification_correct) items.push('case type mismatch'); if (!record.priority_correct) items.push('priority mismatch'); if (!record.safety_correct) items.push('safety mismatch'); if (!record.groundedness_pass) items.push('groundedness failed'); return items.join('; '); },
           allGates(run) { return Object.values(run.summary.gates).every(Boolean); }, percent(value) { return `${(value * 100).toFixed(1)}%`; }, pretty(value) { return JSON.stringify(value,null,2); },
         }

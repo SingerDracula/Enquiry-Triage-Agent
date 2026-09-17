@@ -161,6 +161,8 @@ class OpenAICompatibleProvider:
     output_usd_per_million: float = 0.0
     structured_output_mode: StructuredOutputMode = StructuredOutputMode.JSON_SCHEMA_STRICT
     max_tokens: int = 800
+    temperature: float = 0.0
+    thinking_mode: str | None = None
 
     @property
     def name(self) -> str:
@@ -179,7 +181,7 @@ class OpenAICompatibleProvider:
             response_format = {"type": "json_object"}
             formatted_system_prompt = (
                 f"{system_prompt}\n\n"
-                "DeepSeek JSON mode requirements: return exactly one JSON object and no markdown, "
+                "JSON mode requirements: return exactly one JSON object and no markdown, "
                 "preamble, explanation, or extra fields. Use the exact field names and enum values below.\n"
                 "Field contract:\n"
                 "- case_type: exactly one of POLICY_QUERY, PREMIUM_BILLING, ADDRESS_CHANGE, CLAIM, COMPLAINT, OTHER.\n"
@@ -218,9 +220,9 @@ class OpenAICompatibleProvider:
                 f"JSON Schema:\n{json.dumps(response_schema, ensure_ascii=False)}"
             )
 
-        return {
+        payload = {
             "model": self.model,
-            "temperature": 0,
+            "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "messages": [
                 {"role": "system", "content": formatted_system_prompt},
@@ -228,6 +230,9 @@ class OpenAICompatibleProvider:
             ],
             "response_format": response_format,
         }
+        if self.thinking_mode is not None:
+            payload["thinking"] = {"type": self.thinking_mode}
+        return payload
 
     def generate(self, *, system_prompt: str, email_text: str, response_schema: dict) -> ProviderResponse:
         payload = self.build_payload(
@@ -482,8 +487,8 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
 
     if spec in {"demo-fast", "demo-conservative"}:
         return DemoRuleBasedProvider(profile=spec.removeprefix("demo-"))
-    if ":" in spec or spec not in {"gpt", "deepseek", "gemini", "compatible"}:
-        raise ProviderError("Unknown provider. Use demo-fast, demo-conservative, gpt, deepseek, gemini, or compatible.")
+    if ":" in spec or spec not in {"gpt", "deepseek", "gemini", "glm", "compatible"}:
+        raise ProviderError("Unknown provider. Use demo-fast, demo-conservative, gpt, deepseek, gemini, glm, or compatible.")
 
     settings_by_name = _load_provider_settings(config_path or Path.cwd() / "config.toml")
     settings = settings_by_name.get(spec)
@@ -505,7 +510,11 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
             output_usd_per_million=_price(settings, "output_usd_per_million", spec),
         )
 
-    default_base_url = "https://api.openai.com/v1" if spec == "gpt" else ""
+    default_base_urls = {
+        "gpt": "https://api.openai.com/v1",
+        "glm": "https://open.bigmodel.cn/api/paas/v4",
+    }
+    default_base_url = default_base_urls.get(spec, "")
     base_url = _optional_string(settings, "base_url", default_base_url, spec)
     _validate_base_url(base_url)
     return OpenAICompatibleProvider(
@@ -515,6 +524,9 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
         input_usd_per_million=_price(settings, "input_usd_per_million", spec),
         output_usd_per_million=_price(settings, "output_usd_per_million", spec),
         structured_output_mode=(
-            StructuredOutputMode.JSON_OBJECT if spec == "deepseek" else StructuredOutputMode.JSON_SCHEMA_STRICT
+            StructuredOutputMode.JSON_OBJECT if spec in {"deepseek", "glm"} else StructuredOutputMode.JSON_SCHEMA_STRICT
         ),
+        max_tokens=1024 if spec == "glm" else 800,
+        temperature=0.01 if spec == "glm" else 0.0,
+        thinking_mode="disabled" if spec == "glm" else None,
     )

@@ -10,7 +10,7 @@ A production-minded MVP for classifying inbound insurance customer emails, draft
 - 48 synthetic labelled enquiries: 30 frozen golden records and 18 development records. They cover all six case types, urgent/normal/low priorities, ambiguous messages, angry tone, missing information, prompt injection, and unsafe requests.
 - A re-runnable evaluation harness for macro-F1, priority accuracy, urgent recall, groundedness, reply-quality heuristic, calibration, latency, cost, quality gates, and a weighted model comparison.
 - An offline deterministic demo provider so the full workflow and test suite run without credentials. It is a workflow baseline, not a substitute for the case study's two real LLMs.
-- First-class GPT, DeepSeek, and Gemini adapters, with server-side structured output and local Pydantic enforcement for every provider.
+- First-class GPT, DeepSeek, Gemini, and Zhipu GLM adapters, with provider-supported structured output and local Pydantic enforcement for every provider.
 
 ## Quick start
 
@@ -52,7 +52,7 @@ Start the local FastAPI and Vue UI after installing the updated dependencies:
 .venv/bin/triage-web
 ```
 
-Open `http://127.0.0.1:8000`. The page accepts an email subject/body for triage, lets a reviewer accept, edit-and-accept, or discard queued drafts, and runs provider evaluations. It shows every invalid or mismatched evaluation case with its safe failure reason. The server binds only to localhost, reads model settings from private `config.toml`, and never sends email.
+Open `http://127.0.0.1:8000`. The page accepts an email subject/body for triage, lets a reviewer accept, edit-and-accept, or discard queued drafts, and runs provider evaluations. After evaluation, it lists every case for each provider with pass/fail status, expected and actual labels, validation/grounding results, confidence, reply-quality heuristic, latency, and failure reason; the list can be filtered to passed or failed cases. The server binds only to localhost, reads model settings from private `config.toml`, and never sends email.
 
 ## Real LLM comparison
 
@@ -63,6 +63,7 @@ Provider URLs must use HTTPS (plain HTTP is accepted only for localhost developm
 | OpenAI GPT | `gpt` | `[providers.gpt]` | Chat Completions strict JSON Schema |
 | DeepSeek | `deepseek` | `[providers.deepseek]` | JSON Object mode, explicit prompt contract, then local validation |
 | Google Gemini | `gemini` | `[providers.gemini]` | GenerateContent JSON Schema, then local validation |
+| Zhipu GLM-4.7-Flash | `glm` | `[providers.glm]` | Chat Completions JSON Object mode, then local validation |
 
 Copy the versioned template to the private configuration file, then set the model ID and API key there. `config.toml` is ignored by Git, so it will not be committed.
 
@@ -70,11 +71,11 @@ Copy the versioned template to the private configuration file, then set the mode
 cp config.example.toml config.toml
 ```
 
-Run a real-provider comparison after setting the three model IDs in `config.toml`:
+Run a real-provider comparison after setting the model IDs and API keys you use in `config.toml`:
 
 ```bash
 .venv/bin/triage-agent evaluate \
-  --models gpt,deepseek,gemini
+  --models gpt,deepseek,gemini,glm
 ```
 
 For DeepSeek Chat Completions, choose `deepseek`. This sends `response_format={"type":"json_object"}` and embeds the required JSON Schema and example in the system prompt. The response still must pass local Pydantic validation and safety checks before it can be reviewed.
@@ -90,9 +91,14 @@ For DeepSeek Chat Completions, choose `deepseek`. This sends `response_format={"
 
 .venv/bin/triage-agent triage data/example_email.txt \
   --provider gemini
+
+.venv/bin/triage-agent triage data/example_email.txt \
+  --provider glm
 ```
 
-`compatible` remains available for another OpenAI-compatible endpoint that supports strict JSON Schema. Do not route a provider through the wrong adapter: DeepSeek uses JSON Object mode, while Gemini uses its GenerateContent endpoint. Use `--config /path/to/config.toml` if the private file is not in the current directory.
+`glm` uses the official `https://open.bigmodel.cn/api/paas/v4` base URL by default and the `glm-4.7-flash` model ID in the configuration example. It sends JSON Object mode with thinking disabled and validates the response locally; it does not claim server-side strict JSON Schema enforcement. Add the `[providers.glm]` section from `config.example.toml` to an existing private `config.toml` if you are upgrading an existing installation.
+
+`compatible` remains available for another OpenAI-compatible endpoint that supports strict JSON Schema. Do not route a provider through the wrong adapter: DeepSeek and GLM use JSON Object mode, while Gemini uses its GenerateContent endpoint. Use `--config /path/to/config.toml` if the private file is not in the current directory.
 
 The two model identifiers must be genuinely distinct models, tiers, or providers. The default `demo-fast,demo-conservative` command validates the evaluation pipeline only; it must not be presented as a two-LLM case-study comparison.
 
