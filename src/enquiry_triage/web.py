@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+import re
 import sys
 import sysconfig
 from typing import Annotated
@@ -43,6 +45,8 @@ DEFAULT_RESULTS = default_results_dir()
 DEFAULT_GOLDEN_SET = _default_golden_set()
 DEFAULT_CONFIG = Path(os.getenv("AI_TRIAGE_CONFIG", "config.toml"))
 STATIC_DIR = Path(__file__).with_name("static")
+EVALUATION_FILENAME = re.compile(r"comparison_\d{8}T\d{6}Z\.json\Z")
+MAX_EVALUATION_BYTES = 5_000_000
 
 
 class TriageRequest(BaseModel):
@@ -148,6 +152,56 @@ def evaluate(request: EvaluationRequest) -> dict:
         "comparison": comparison,
         "artifacts": {"summary": str(summary_path), "records": str(records_path)},
     }
+
+
+def _load_evaluation_file(path: Path) -> dict:
+    try:
+        if path.stat().st_size > MAX_EVALUATION_BYTES:
+            raise ValueError("Evaluation result is too large")
+        comparison = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Evaluation result cannot be read") from exc
+    if not isinstance(comparison, dict) or not isinstance(comparison.get("runs"), list):
+        raise ValueError("Evaluation result has an invalid format")
+    for run in comparison["runs"]:
+        if not isinstance(run, dict) or not isinstance(run.get("summary"), dict) or not isinstance(run.get("records"), list):
+            raise ValueError("Evaluation result has an invalid format")
+    return comparison
+
+
+@app.get("/api/evaluations")
+def list_evaluations() -> dict:
+    if not DEFAULT_RESULTS.is_dir():
+        return {"results": []}
+    results = []
+    for path in sorted(DEFAULT_RESULTS.glob("comparison_*.json"), reverse=True):
+        if not EVALUATION_FILENAME.fullmatch(path.name) or not path.is_file() or path.is_symlink():
+            continue
+        try:
+            comparison = _load_evaluation_file(path)
+        except ValueError:
+            continue
+        results.append({
+            "filename": path.name,
+            "run_at": comparison.get("run_at", ""),
+            "models": [run["summary"].get("model", "unknown") for run in comparison["runs"]],
+            "case_count": len(comparison.get("golden_ids", [])),
+        })
+    return {"results": results}
+
+
+@app.get("/api/evaluations/{filename}")
+def get_evaluation(filename: str) -> dict:
+    if not EVALUATION_FILENAME.fullmatch(filename):
+        raise HTTPException(status_code=404, detail="Evaluation result not found")
+    path = DEFAULT_RESULTS / filename
+    if not path.is_file() or path.is_symlink():
+        raise HTTPException(status_code=404, detail="Evaluation result not found")
+    try:
+        comparison = _load_evaluation_file(path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"comparison": comparison, "artifacts": {"summary": str(path), "records": str(path.with_name(path.stem + "_records.csv"))}}
 
 
 def run() -> None:

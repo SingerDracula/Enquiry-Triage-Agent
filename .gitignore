@@ -8,6 +8,8 @@ config.toml
 review_queue.db
 results/*.json
 results/*.csv
+evaluation_results/comparison_*.json
+evaluation_results/comparison_*_records.csv
 !results/.gitkeep
 .pytest_cache/
 .ruff_cache/

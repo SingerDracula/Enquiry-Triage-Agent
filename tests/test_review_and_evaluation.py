@@ -3,7 +3,11 @@ from __future__ import annotations
 import tempfile
 import unittest
 import os
+import json
 from pathlib import Path
+from unittest.mock import patch
+
+from fastapi import HTTPException
 
 from enquiry_triage.agent import TriageAgent
 from enquiry_triage.cli import build_parser
@@ -12,6 +16,7 @@ from enquiry_triage.models import Inquiry, ProviderResponse, ReviewDecision, Usa
 from enquiry_triage.providers import DemoRuleBasedProvider
 from enquiry_triage.review import ReviewError, ReviewStore
 from enquiry_triage.web import DEFAULT_RESULTS as WEB_DEFAULT_RESULTS
+from enquiry_triage.web import get_evaluation, list_evaluations
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,10 +77,16 @@ class ReviewAndEvaluationTests(unittest.TestCase):
                 self.assertIn("actual_safety_status", record)
                 self.assertIn("groundedness_pass", record)
                 self.assertIn("reply_quality_score", record)
+                self.assertIn("draft_reply", record)
         with tempfile.TemporaryDirectory() as directory:
             summary, records = write_comparison(comparison, Path(directory))
             self.assertTrue(summary.is_file())
             self.assertTrue(records.is_file())
+            self.assertEqual(
+                json.loads(summary.read_text(encoding="utf-8"))["runs"][0]["records"][0]["draft_reply"],
+                comparison["runs"][0]["records"][0]["draft_reply"],
+            )
+            self.assertNotIn("draft_reply", records.read_text(encoding="utf-8").splitlines()[0])
 
     def test_csv_output_escapes_formula_like_identifiers(self) -> None:
         comparison = {
@@ -91,3 +102,25 @@ class ReviewAndEvaluationTests(unittest.TestCase):
             output = records.read_text(encoding="utf-8")
             self.assertIn("'=unsafe-model", output)
             self.assertIn("'@unsafe-id", output)
+
+    def test_saved_evaluations_can_be_listed_and_loaded_safely(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            filename = "comparison_20260917T120000Z.json"
+            (root / filename).write_text(json.dumps({
+                "run_at": "2026-09-17T12:00:00Z",
+                "golden_ids": ["golden-pq-01"],
+                "runs": [{"summary": {"model": "demo-fast"}, "records": []}],
+            }), encoding="utf-8")
+            (root / "comparison_20260917T130000Z.json").write_text("not json", encoding="utf-8")
+            with patch("enquiry_triage.web.DEFAULT_RESULTS", root):
+                listed = list_evaluations()["results"]
+                self.assertEqual([item["filename"] for item in listed], [filename])
+                self.assertEqual(listed[0]["models"], ["demo-fast"])
+                self.assertEqual(get_evaluation(filename)["comparison"]["runs"][0]["summary"]["model"], "demo-fast")
+                with self.assertRaises(HTTPException) as invalid:
+                    get_evaluation("../config.toml")
+                self.assertEqual(invalid.exception.status_code, 404)
+                with self.assertRaises(HTTPException) as corrupt:
+                    get_evaluation("comparison_20260917T130000Z.json")
+                self.assertEqual(corrupt.exception.status_code, 422)

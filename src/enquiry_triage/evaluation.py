@@ -185,6 +185,7 @@ def evaluate_agent(agent: TriageAgent, inquiries: Iterable[Inquiry]) -> dict[str
                 "safety_correct": valid and result.safety_status.value == expected_safety_status,
                 "groundedness_pass": valid and groundedness_passes(inquiry, result),
                 "reply_quality_score": round(_reply_quality_heuristic(attempt), 4),
+                "draft_reply": result.draft_reply if result else None,
                 "confidence": result.confidence.score if result else None,
                 "latency_ms": round(attempt.latency_ms, 3),
                 "input_tokens": attempt.usage.input_tokens,
@@ -303,7 +304,7 @@ def compare_agents(
 
 
 def write_comparison(comparison: dict[str, Any], output_dir: Path) -> tuple[Path, Path]:
-    """Write auditable summary JSON and flat per-case CSV without customer email bodies."""
+    """Write draft-bearing JSON and a metrics-only CSV without customer email bodies."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -311,7 +312,7 @@ def write_comparison(comparison: dict[str, Any], output_dir: Path) -> tuple[Path
     records_path = output_dir / f"comparison_{stamp}_records.csv"
     summary_path.write_text(json.dumps(comparison, indent=2, ensure_ascii=False), encoding="utf-8")
     rows = [
-        {key: _escape_csv_value(value) for key, value in {"model": run["summary"]["model"], **record}.items()}
+        {key: _escape_csv_value(value) for key, value in {"model": run["summary"]["model"], **record}.items() if key != "draft_reply"}
         for run in comparison["runs"]
         for record in run["records"]
     ]

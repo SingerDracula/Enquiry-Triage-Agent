@@ -10,10 +10,10 @@
       * { box-sizing: border-box; }
       body { margin: 0; }
       [v-cloak] { display: none; }
-      header { background: #102a43; color: white; padding: 22px max(24px, calc((100% - 1180px) / 2)); }
+      header { background: #102a43; color: white; padding: 22px max(24px, calc((100% - 1740px) / 2)); }
       header h1 { margin: 0; font-size: 1.35rem; }
       header p { margin: 5px 0 0; color: #c9d8e8; font-size: .92rem; }
-      main { max-width: 1180px; margin: 24px auto; padding: 0 20px 48px; }
+      main { max-width: 1800px; margin: 24px auto; padding: 0 20px 48px; }
       nav { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
       button, input, textarea, select { font: inherit; }
       button { border: 0; border-radius: 7px; padding: 9px 13px; cursor: pointer; background: #146c94; color: white; font-weight: 650; }
@@ -34,7 +34,12 @@
       .pill { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: .75rem; font-weight: 750; background: #e1effe; color: #075985; }
       .pill.fail { background: #fee2e2; color: #991b1b; } .pill.pass { background: #dcfce7; color: #166534; }
       table { width: 100%; border-collapse: collapse; font-size: .88rem; } th, td { text-align: left; padding: 10px; border-bottom: 1px solid #e4ebf3; vertical-align: top; } th { color: #52667f; }
-      .case-table { min-width: 1000px; } .case-table td { overflow-wrap: anywhere; } .case-table .comparison { white-space: nowrap; }
+      .metric-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 18px; }
+      .case-table { min-width: 1450px; } .case-table th, .case-table td:not(.reason-cell):not(.draft-cell) { white-space: nowrap; }
+      .case-table .reason-cell { min-width: 200px; overflow-wrap: anywhere; }
+      .case-table .draft-cell { white-space: normal; } .case-table .draft-cell pre { white-space: pre-wrap; }
+      .case-toggle { padding: 0; background: none; color: #075985; text-decoration: underline; font-weight: 650; }
+      .case-toggle:hover { background: none; color: #0f5576; }
       .case-filter { width: auto; min-width: 125px; margin-left: auto; }
       .muted { color: #64748b; font-size: .88rem; } .wide { overflow-x: auto; } .check { display: flex; gap: 7px; align-items: center; font-weight: 500; margin-top: 12px; }
       .check input { width: auto; } .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, .9fr); gap: 16px; } @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
@@ -79,13 +84,21 @@
         </section>
 
         <section v-else class="card">
-          <h2>Evaluate providers</h2><p class="muted">Runs the frozen 30-case golden set and saves JSON/CSV files in the project's <code>evaluation_results/</code> folder. Each selected provider must be configured in private <code>config.toml</code>. Real provider calls can incur cost.</p>
+          <h2>Evaluate providers</h2><p class="muted">Runs the frozen 30-case golden set and saves JSON/CSV files in the project's <code>evaluation_results/</code> folder. New JSON results include reply drafts; keep them private. Each selected provider must be configured in private <code>config.toml</code>. Real provider calls can incur cost.</p>
           <div class="grid"><label v-for="provider in providers" :key="provider" class="check"><input type="checkbox" :value="provider" v-model="evaluationProviders" /> {{ provider }}</label></div>
           <div class="actions"><button :disabled="busy" @click="runEvaluation">{{ busy ? 'Running evaluation…' : 'Evaluate selected providers' }}</button></div>
+          <div class="actions"><label for="evaluation-history" style="margin:0">Previous evaluations</label>
+            <select id="evaluation-history" class="case-filter" v-model="selectedHistory" :disabled="busy || !history.length"><option value="">{{ history.length ? 'Select a saved run' : 'No saved runs' }}</option><option v-for="item in history" :key="item.filename" :value="item.filename">{{ item.run_at || item.filename }} · {{ item.models.join(', ') }} · {{ item.case_count }} cases</option></select>
+            <button class="secondary" :disabled="busy || !selectedHistory" @click="loadEvaluation">View saved run</button><button class="secondary" :disabled="busy" @click="loadHistory">Refresh list</button>
+          </div>
           <template v-if="evaluation"><div class="notice">Artifacts saved: {{ evaluation.artifacts.summary }}</div>
             <div v-for="run in evaluation.comparison.runs" :key="run.summary.model" class="card" style="margin-top:16px">
               <h3>{{ run.summary.model }} <span class="pill" :class="{fail: !allGates(run), pass: allGates(run)}">{{ allGates(run) ? 'all gates pass' : 'gates failed' }}</span></h3>
-              <div class="grid muted"><span>Classification: {{ percent(run.summary.classification_accuracy) }}</span><span>Priority: {{ percent(run.summary.priority_accuracy) }}</span><span>Schema: {{ percent(run.summary.schema_success_rate) }}</span><span>ECE: {{ run.summary.calibration.ece ?? 'n/a' }}</span></div>
+              <div class="grid metric-grid muted"><span>Classification: {{ percent(run.summary.classification_accuracy) }}</span><span>Macro F1: {{ percent(run.summary.macro_f1) }}</span><span>Priority: {{ percent(run.summary.priority_accuracy) }}</span><span>Schema: {{ percent(run.summary.schema_success_rate) }}</span><span>ECE: {{ run.summary.calibration.ece ?? 'n/a' }}</span></div>
+              <details style="margin-top:16px"><summary>F1 by case type</summary><div class="wide"><table>
+                <thead><tr><th>Case type</th><th>Precision</th><th>Recall</th><th>F1</th><th>Cases</th></tr></thead>
+                <tbody><tr v-for="(metrics, caseType) in run.summary.per_class_f1" :key="caseType"><td>{{ caseType }}</td><td>{{ percent(metrics.precision) }}</td><td>{{ percent(metrics.recall) }}</td><td>{{ percent(metrics.f1) }}</td><td>{{ metrics.support }}</td></tr></tbody>
+              </table></div></details>
               <div class="actions" style="margin-top:18px">
                 <h3 style="margin:0">Case results</h3>
                 <span class="muted">{{ passedCaseCount(run) }} passed · {{ run.records.length - passedCaseCount(run) }} failed · {{ run.records.length }} total</span>
@@ -97,8 +110,8 @@
               <p v-if="!visibleCases(run).length" class="muted">No cases match this filter.</p>
               <div v-else class="wide"><table class="case-table">
                 <thead><tr><th>Case</th><th>Result</th><th>Case type</th><th>Priority</th><th>Safety</th><th>Schema</th><th>Grounding</th><th>Confidence</th><th>Reply quality</th><th>Latency</th><th>Reason</th></tr></thead>
-                <tbody><tr v-for="record in visibleCases(run)" :key="record.inquiry_id">
-                  <td>{{ record.inquiry_id }}</td>
+                <tbody><template v-for="record in visibleCases(run)" :key="record.inquiry_id"><tr>
+                  <td><button class="case-toggle" type="button" :aria-expanded="!!expandedCases[caseKey(run, record)]" @click="toggleCase(run, record)">{{ record.inquiry_id }} {{ expandedCases[caseKey(run, record)] ? '▴' : '▾' }}</button></td>
                   <td><span class="pill" :class="casePassed(record) ? 'pass' : 'fail'">{{ casePassed(record) ? 'PASS' : 'FAIL' }}</span></td>
                   <td class="comparison">{{ record.expected_case_type ?? '—' }} → {{ record.actual_case_type ?? '—' }}</td>
                   <td class="comparison">{{ record.expected_priority ?? '—' }} → {{ record.actual_priority ?? '—' }}</td>
@@ -108,8 +121,8 @@
                   <td>{{ record.confidence == null ? '—' : record.confidence.toFixed(2) }}</td>
                   <td>{{ percent(record.reply_quality_score) }}</td>
                   <td>{{ record.latency_ms.toFixed(0) }} ms</td>
-                  <td>{{ casePassed(record) ? 'All checks passed' : issueReason(record) }}</td>
-                </tr></tbody>
+                  <td class="reason-cell">{{ casePassed(record) ? 'All checks passed' : issueReason(record) }}</td>
+                </tr><tr v-if="expandedCases[caseKey(run, record)]"><td class="draft-cell" colspan="11"><strong>Reply draft</strong><p v-if="record.draft_reply == null" class="muted">{{ record.draft_reply === undefined ? 'This older evaluation did not save reply drafts.' : 'No valid reply draft was produced for this case.' }}</p><pre v-else>{{ record.draft_reply }}</pre></td></tr></template></tbody>
               </table></div>
             </div>
           </template>
@@ -123,9 +136,9 @@
           tabs: [{id:'triage',label:'Triage'}, {id:'review',label:'Review'}, {id:'evaluate',label:'Evaluate'}], tab:'triage',
           providers:['demo-fast','demo-conservative','gpt','deepseek','gemini','glm'], busy:false, error:'', notice:'',
           triageForm:{subject:'',body:'',provider:'demo-fast',queue_for_review:true}, triageResult:null,
-          reviews:[], selectedReview:null, editedReply:'', evaluationProviders:['deepseek','gemini'], evaluation:null, caseFilters:{},
+          reviews:[], selectedReview:null, editedReply:'', evaluationProviders:['deepseek','gemini'], evaluation:null, caseFilters:{}, expandedCases:{}, history:[], selectedHistory:'',
         }; },
-        mounted() { this.loadReviews(); },
+        mounted() { this.loadReviews(); this.loadHistory(); },
         methods: {
           async api(path, options={}) { const response = await fetch(path, {headers:{'Content-Type':'application/json'}, ...options}); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || 'Request failed'); return data; },
           clearMessage() { this.error=''; this.notice=''; },
@@ -133,7 +146,11 @@
           async loadReviews() { this.clearMessage(); try { this.reviews=(await this.api('/api/reviews')).records; } catch (error) { this.error=error.message; } },
           selectReview(record) { this.selectedReview=record; this.editedReply=record.result.draft_reply; },
           async decide(decision) { if (!this.selectedReview) return; this.clearMessage(); this.busy=true; try { await this.api(`/api/reviews/${this.selectedReview.id}/decision`,{method:'POST',body:JSON.stringify({decision,edited_reply:decision==='EDITED_AND_ACCEPTED' ? this.editedReply : null})}); this.notice=`Review record #${this.selectedReview.id} updated. No email was sent.`; this.selectedReview=null; this.editedReply=''; await this.loadReviews(); } catch (error) { this.error=error.message; } finally { this.busy=false; } },
-          async runEvaluation() { this.clearMessage(); if (this.evaluationProviders.length < 2) { this.error='Choose at least two distinct providers.'; return; } this.evaluation=null; this.caseFilters={}; this.busy=true; try { this.evaluation=await this.api('/api/evaluate',{method:'POST',body:JSON.stringify({providers:this.evaluationProviders})}); this.caseFilters=Object.fromEntries(this.evaluation.comparison.runs.map(run => [run.summary.model,'all'])); this.notice='Evaluation completed. All case results are shown below.'; } catch (error) { this.error=error.message; } finally { this.busy=false; } },
+          async runEvaluation() { this.clearMessage(); if (this.evaluationProviders.length < 2) { this.error='Choose at least two distinct providers.'; return; } this.evaluation=null; this.caseFilters={}; this.expandedCases={}; this.busy=true; try { this.evaluation=await this.api('/api/evaluate',{method:'POST',body:JSON.stringify({providers:this.evaluationProviders})}); this.caseFilters=Object.fromEntries(this.evaluation.comparison.runs.map(run => [run.summary.model,'all'])); this.notice='Evaluation completed. All case results are shown below.'; await this.loadHistory(); this.selectedHistory=this.evaluation.artifacts.summary.split('/').pop(); } catch (error) { this.error=error.message; } finally { this.busy=false; } },
+          async loadHistory() { try { this.history=(await this.api('/api/evaluations')).results; } catch (error) { this.error=error.message; } },
+          async loadEvaluation() { if (!this.selectedHistory) return; this.clearMessage(); this.busy=true; try { this.evaluation=await this.api(`/api/evaluations/${encodeURIComponent(this.selectedHistory)}`); this.caseFilters=Object.fromEntries(this.evaluation.comparison.runs.map(run => [run.summary.model,'all'])); this.expandedCases={}; this.notice=`Loaded saved evaluation: ${this.selectedHistory}`; } catch (error) { this.error=error.message; } finally { this.busy=false; } },
+          caseKey(run, record) { return `${run.summary.model}:${record.inquiry_id}`; },
+          toggleCase(run, record) { const key=this.caseKey(run, record); this.expandedCases[key]=!this.expandedCases[key]; },
           casePassed(record) { return record.valid && record.classification_correct && record.priority_correct && record.safety_correct && record.groundedness_pass; },
           passedCaseCount(run) { return run.records.filter(record => this.casePassed(record)).length; },
           visibleCases(run) { const filter=this.caseFilters[run.summary.model] || 'all'; return run.records.filter(record => filter === 'all' || this.casePassed(record) === (filter === 'pass')); },
