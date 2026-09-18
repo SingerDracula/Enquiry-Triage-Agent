@@ -75,6 +75,8 @@ class ProviderPayloadTests(unittest.TestCase):
 
         self.assertEqual(provider.structured_output_mode, StructuredOutputMode.JSON_OBJECT)
         self.assertEqual(provider.base_url, "https://api.deepseek.com")
+        self.assertEqual(provider.max_tokens, 2048)
+        self.assertEqual(provider.thinking_mode, "disabled")
 
     def test_gpt_spec_selects_openai_strict_schema_mode(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -54,6 +54,8 @@ Start the local FastAPI and Vue UI after installing the updated dependencies:
 
 Open `http://127.0.0.1:8000`. The page accepts an email subject/body for triage, lets a reviewer accept, edit-and-accept, or discard queued drafts, and runs provider evaluations. After evaluation, it lists every case for each provider with pass/fail status, expected and actual labels, validation/grounding results, confidence, reply-quality heuristic, latency, and failure reason; the list can be filtered to passed or failed cases, and each case can expand to show its saved reply draft. Previous evaluations can be loaded without rerunning models. Evaluation JSON/CSV files are saved in the project's `evaluation_results/` folder. The server binds only to localhost, reads model settings from private `config.toml`, and never sends email.
 
+Web evaluations return a job ID immediately. The page polls `/api/evaluation-jobs/{job_id}` and loads the saved comparison, including the recommended model, when the job completes. Job status is stored in the private application-data directory, so a refreshed page can resume polling. The work still runs inside the web process; a process restart interrupts an unfinished evaluation and the page reports that interruption. Use the CLI evaluation command when the hosting platform may restart long-running web processes.
+
 ## Real LLM comparison
 
 Provider URLs must use HTTPS (plain HTTP is accepted only for localhost development). Prices are configuration values, not hard-coded assumptions; record the values used for each evaluation.

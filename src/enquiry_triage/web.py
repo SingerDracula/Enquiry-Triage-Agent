@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 import re
 import sys
 import sysconfig
+from threading import Lock
 from typing import Annotated
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .agent import TriageAgent
@@ -47,6 +50,10 @@ DEFAULT_CONFIG = Path(os.getenv("AI_TRIAGE_CONFIG", "config.toml"))
 STATIC_DIR = Path(__file__).with_name("static")
 EVALUATION_FILENAME = re.compile(r"comparison_\d{8}T\d{6}Z\.json\Z")
 MAX_EVALUATION_BYTES = 5_000_000
+JOB_DIR = APP_STATE_DIR / "evaluation_jobs"
+_server_id = uuid4().hex
+_job_lock = Lock()
+_active_job_id: str | None = None
 
 
 class TriageRequest(BaseModel):
@@ -136,22 +143,69 @@ def decide_review(record_id: int, request: DecisionRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/evaluate")
-def evaluate(request: EvaluationRequest) -> dict:
+def _job_path(job_id: str) -> Path:
+    return JOB_DIR / f"{job_id}.json"
+
+
+def _save_job(job: dict) -> None:
+    JOB_DIR.mkdir(parents=True, exist_ok=True)
+    path = _job_path(job["job_id"])
+    temporary = path.with_suffix(".tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(job, handle)
+    temporary.replace(path)
+
+
+def _run_evaluation(job_id: str, agents: list[TriageAgent]) -> None:
+    global _active_job_id
+    job = {"job_id": job_id, "status": "running", "server_id": _server_id}
+    try:
+        _save_job(job)
+        golden_hash = verify_frozen_dataset(DEFAULT_GOLDEN_SET)
+        comparison = compare_agents(agents, load_inquiries(DEFAULT_GOLDEN_SET), golden_hash)
+        summary_path, _ = write_comparison(comparison, DEFAULT_RESULTS)
+        job.update(status="complete", filename=summary_path.name, recommendation=comparison["recommendation"])
+    except Exception:
+        logging.exception("Evaluation job %s failed", job_id)
+        job.update(status="failed", error="Evaluation failed. Check the server error log.")
+    finally:
+        try:
+            _save_job(job)
+        finally:
+            with _job_lock:
+                if _active_job_id == job_id:
+                    _active_job_id = None
+
+
+@app.post("/api/evaluate", status_code=202)
+def evaluate(request: EvaluationRequest, background_tasks: BackgroundTasks) -> JSONResponse:
+    global _active_job_id
     specs = [spec.strip() for spec in request.providers if spec.strip()]
     if len(specs) < 2 or len(set(specs)) < 2:
         raise HTTPException(status_code=400, detail="Choose at least two distinct providers for evaluation.")
     agents = [TriageAgent(_provider(spec)) for spec in specs]
+    with _job_lock:
+        if _active_job_id is not None:
+            raise HTTPException(status_code=409, detail="An evaluation is already running.")
+        job_id = uuid4().hex
+        _save_job({"job_id": job_id, "status": "queued", "server_id": _server_id})
+        _active_job_id = job_id
+    background_tasks.add_task(_run_evaluation, job_id, agents)
+    return JSONResponse({"job_id": job_id, "status": "queued"}, status_code=202)
+
+
+@app.get("/api/evaluation-jobs/{job_id}")
+def get_evaluation_job(job_id: str) -> dict:
+    if not re.fullmatch(r"[0-9a-f]{32}", job_id):
+        raise HTTPException(status_code=404, detail="Evaluation job not found")
     try:
-        golden_hash = verify_frozen_dataset(DEFAULT_GOLDEN_SET)
-        comparison = compare_agents(agents, load_inquiries(DEFAULT_GOLDEN_SET), golden_hash)
-        summary_path, records_path = write_comparison(comparison, DEFAULT_RESULTS)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {
-        "comparison": comparison,
-        "artifacts": {"summary": str(summary_path), "records": str(records_path)},
-    }
+        job = json.loads(_job_path(job_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="Evaluation job not found") from exc
+    if job.get("server_id") != _server_id and job.get("status") in {"queued", "running"}:
+        return {"job_id": job_id, "status": "interrupted", "error": "The web process restarted before evaluation completed."}
+    return {key: value for key, value in job.items() if key != "server_id"}
 
 
 def _load_evaluation_file(path: Path) -> dict:

@@ -526,7 +526,7 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
         structured_output_mode=(
             StructuredOutputMode.JSON_OBJECT if spec in {"deepseek", "glm"} else StructuredOutputMode.JSON_SCHEMA_STRICT
         ),
-        max_tokens=2048 if spec == "glm" else 800,
+        max_tokens=2048 if spec == "deepseek" else (1024 if spec == "glm" else 800),
         temperature=0.01 if spec == "glm" else 0.0,
         thinking_mode="disabled" if spec in {"deepseek", "glm"} else None,
     )
