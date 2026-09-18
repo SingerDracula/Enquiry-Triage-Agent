@@ -1,5 +1,8 @@
 # Copy this file to config.toml, then fill in only the providers you use.
 # config.toml is ignored by Git: do not put credentials in this example file.
+# Set current USD prices per million tokens for cost estimates. If both prices
+# remain zero, evaluation reports cost as unavailable rather than free.
+# For a genuinely free provider, set pricing_is_free = true explicitly.
 
 [providers.gpt]
 model = "your-gpt-model"
@@ -7,6 +10,7 @@ api_key = "replace_with_your_key"
 # base_url = "https://api.openai.com/v1"
 input_usd_per_million = 0
 output_usd_per_million = 0
+# pricing_is_free = true
 
 [providers.deepseek]
 model = "your-deepseek-model"
@@ -14,6 +18,7 @@ api_key = "replace_with_your_key"
 base_url = "https://api.deepseek.com"
 input_usd_per_million = 0
 output_usd_per_million = 0
+# pricing_is_free = true
 
 [providers.gemini]
 model = "your-gemini-model"
@@ -21,6 +26,7 @@ api_key = "replace_with_your_key"
 # base_url = "https://generativelanguage.googleapis.com/v1beta"
 input_usd_per_million = 0
 output_usd_per_million = 0
+# pricing_is_free = true
 
 [providers.glm]
 model = "glm-4.7-flash"
@@ -28,6 +34,7 @@ api_key = "replace_with_your_key"
 # base_url = "https://open.bigmodel.cn/api/paas/v4"
 input_usd_per_million = 0
 output_usd_per_million = 0
+# pricing_is_free = true
 
 # Optional OpenAI-compatible strict-JSON-Schema endpoint.
 #[providers.compatible]

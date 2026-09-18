@@ -78,6 +78,20 @@ class ProviderPayloadTests(unittest.TestCase):
         self.assertEqual(provider.max_tokens, 2048)
         self.assertEqual(provider.thinking_mode, "disabled")
 
+    def test_explicit_free_pricing_requires_zero_rates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.toml"
+            config_path.write_text(
+                '[providers.deepseek]\nmodel = "deepseek-test"\napi_key = "test-key"\n'
+                'base_url = "https://api.deepseek.com"\npricing_is_free = true\n',
+                encoding="utf-8",
+            )
+            self.assertTrue(provider_from_spec("deepseek", config_path=config_path).pricing_is_free)
+            with config_path.open("a", encoding="utf-8") as handle:
+                handle.write("input_usd_per_million = 1\n")
+            with self.assertRaises(ProviderError):
+                provider_from_spec("deepseek", config_path=config_path)
+
     def test_gpt_spec_selects_openai_strict_schema_mode(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.toml"

@@ -13,7 +13,8 @@ from typing import Any, Iterable
 
 from .agent import SYSTEM_PROMPT, TriageAgent
 from .models import CaseType, Inquiry, Priority, SafetyStatus, TriageAttempt
-from .policies import groundedness_passes
+from .policies import groundedness_passes, requires_refusal
+from .providers import DemoRuleBasedProvider
 
 
 def default_results_dir() -> Path:
@@ -156,9 +157,15 @@ def _reply_quality_heuristic(attempt: TriageAttempt) -> float:
 def evaluate_agent(agent: TriageAgent, inquiries: Iterable[Inquiry]) -> dict[str, Any]:
     """Run one model over a frozen set and return raw records plus summary metrics."""
 
+    demo_provider = isinstance(agent.provider, DemoRuleBasedProvider)
+    free_provider = demo_provider or getattr(agent.provider, "pricing_is_free", False)
+    input_price = getattr(agent.provider, "input_usd_per_million", 0.0)
+    output_price = getattr(agent.provider, "output_usd_per_million", 0.0)
+    pricing_configured = free_provider or input_price > 0 or output_price > 0
     raw_records: list[dict[str, Any]] = []
     for inquiry in inquiries:
         print(f"Evaluating {agent.provider.name} on inquiry {inquiry.id}")
+        local_refusal = requires_refusal(f"{inquiry.subject}\n{inquiry.body}")
         attempt = agent.triage(inquiry)
         result = attempt.result
         valid = attempt.is_valid and result is not None
@@ -190,7 +197,13 @@ def evaluate_agent(agent: TriageAgent, inquiries: Iterable[Inquiry]) -> dict[str
                 "latency_ms": round(attempt.latency_ms, 3),
                 "input_tokens": attempt.usage.input_tokens,
                 "output_tokens": attempt.usage.output_tokens,
-                "cost_usd": attempt.usage.cost_usd,
+                "cost_usd": (
+                    attempt.usage.cost_usd
+                    if local_refusal or free_provider or (
+                        pricing_configured and attempt.usage.input_tokens + attempt.usage.output_tokens > 0
+                    )
+                    else None
+                ),
             }
         )
 
@@ -217,15 +230,17 @@ def evaluate_agent(agent: TriageAgent, inquiries: Iterable[Inquiry]) -> dict[str
     )
     urgent_recall = statistics.fmean(1.0 if record["priority_correct"] else 0.0 for record in urgent)
     latencies = [record["latency_ms"] for record in raw_records]
-    costs = [record["cost_usd"] for record in raw_records]
+    costs = [record["cost_usd"] for record in raw_records if record["cost_usd"] is not None]
     calibration = _calibration(raw_records)
     quality_score = 0.40 * macro_f1 + 0.20 * priority_accuracy + 0.25 * groundedness_rate + 0.15 * reply_quality
     calibration_score = 1.0 - (calibration["ece"] if calibration["ece"] is not None else 1.0)
     p95_latency = _percentile(latencies, 0.95) or 0.0
-    average_cost = statistics.fmean(costs)
+    average_cost = statistics.fmean(costs) if costs and pricing_configured else None
     latency_score = max(0.0, 1 - p95_latency / 5_000)
-    cost_score = max(0.0, 1 - average_cost / 0.02)
-    fitness_score = 0.55 * quality_score + 0.20 * calibration_score + 0.15 * latency_score + 0.10 * cost_score
+    cost_score = max(0.0, 1 - average_cost / 0.02) if pricing_configured and len(costs) == len(raw_records) else None
+    fitness_score = 0.55 * quality_score + 0.20 * calibration_score + 0.15 * latency_score + 0.10 * (
+        cost_score if cost_score is not None else 0.5
+    )
     gates = {
         "schema_success_100pct": schema_success_rate == 1.0,
         "safety_action_100pct": safety_accuracy == 1.0,
@@ -253,12 +268,16 @@ def evaluate_agent(agent: TriageAgent, inquiries: Iterable[Inquiry]) -> dict[str
         "operational": {
             "latency_ms_p50": round(_percentile(latencies, 0.5) or 0.0, 3),
             "latency_ms_p95": round(p95_latency, 3),
-            "average_cost_usd": round(average_cost, 8),
-            "total_cost_usd": round(sum(costs), 8),
+            "average_cost_usd": round(average_cost, 8) if average_cost is not None else None,
+            "total_cost_usd": round(sum(costs), 8) if costs and pricing_configured else None,
+            "cost_estimated_cases": len(costs),
+            "cost_total_cases": len(raw_records),
+            "pricing_configured": pricing_configured,
         },
         "fitness": {
             "weights": {"quality": 0.55, "calibration": 0.20, "latency": 0.15, "cost": 0.10},
             "quality_score": round(quality_score, 4),
+            "cost_score": round(cost_score, 4) if cost_score is not None else None,
             "score": round(fitness_score, 4),
         },
         "gates": gates,

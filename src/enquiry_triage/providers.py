@@ -159,6 +159,7 @@ class OpenAICompatibleProvider:
     api_key: str
     input_usd_per_million: float = 0.0
     output_usd_per_million: float = 0.0
+    pricing_is_free: bool = False
     structured_output_mode: StructuredOutputMode = StructuredOutputMode.JSON_SCHEMA_STRICT
     max_tokens: int = 800
     temperature: float = 0.0
@@ -371,6 +372,7 @@ class GeminiGenerateContentProvider:
     api_key: str
     input_usd_per_million: float = 0.0
     output_usd_per_million: float = 0.0
+    pricing_is_free: bool = False
     max_output_tokens: int = 800
 
     @property
@@ -482,6 +484,15 @@ def _price(settings: dict[str, object], key: str, provider_name: str) -> float:
     return float(value)
 
 
+def _pricing_is_free(settings: dict[str, object], provider_name: str) -> bool:
+    value = settings.get("pricing_is_free", False)
+    if not isinstance(value, bool):
+        raise ProviderError(f"Provider '{provider_name}' has an invalid boolean 'pricing_is_free' in config.toml")
+    if value and (settings.get("input_usd_per_million", 0) or settings.get("output_usd_per_million", 0)):
+        raise ProviderError(f"Provider '{provider_name}' cannot set prices when 'pricing_is_free' is true")
+    return value
+
+
 def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageProvider:
     """Create a demo provider or a named provider configured in private TOML."""
 
@@ -508,6 +519,7 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
             api_key=api_key,
             input_usd_per_million=_price(settings, "input_usd_per_million", spec),
             output_usd_per_million=_price(settings, "output_usd_per_million", spec),
+            pricing_is_free=_pricing_is_free(settings, spec),
         )
 
     default_base_urls = {
@@ -523,6 +535,7 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
         api_key=api_key,
         input_usd_per_million=_price(settings, "input_usd_per_million", spec),
         output_usd_per_million=_price(settings, "output_usd_per_million", spec),
+        pricing_is_free=_pricing_is_free(settings, spec),
         structured_output_mode=(
             StructuredOutputMode.JSON_OBJECT if spec in {"deepseek", "glm"} else StructuredOutputMode.JSON_SCHEMA_STRICT
         ),

@@ -95,7 +95,9 @@
             <div class="notice" :class="evaluation.comparison.recommendation.model ? 'success' : 'error'">Recommendation: {{ evaluation.comparison.recommendation.model || 'No model passed all gates' }}. {{ evaluation.comparison.recommendation.reason }}</div>
             <div v-for="run in evaluation.comparison.runs" :key="run.summary.model" class="card" style="margin-top:16px">
               <h3>{{ run.summary.model }} <span class="pill" :class="{fail: !allGates(run), pass: allGates(run)}">{{ allGates(run) ? 'all gates pass' : 'gates failed' }}</span></h3>
-              <div class="grid metric-grid muted"><span>Classification: {{ percent(run.summary.classification_accuracy) }}</span><span>Macro F1: {{ percent(run.summary.macro_f1) }}</span><span>Priority: {{ percent(run.summary.priority_accuracy) }}</span><span>Schema: {{ percent(run.summary.schema_success_rate) }}</span><span>ECE: {{ run.summary.calibration.ece ?? 'n/a' }}</span></div>
+              <div class="grid metric-grid muted"><span>Classification: {{ percent(run.summary.classification_accuracy) }}</span><span>Macro F1: {{ percent(run.summary.macro_f1) }}</span><span>Priority: {{ percent(run.summary.priority_accuracy) }}</span><span>Schema: {{ percent(run.summary.schema_success_rate) }}</span><span>ECE: {{ run.summary.calibration.ece ?? 'n/a' }}</span><span>Average cost / case: {{ costLabel(run.summary.operational, 'average_cost_usd') }}</span><span>Total estimated cost: {{ costLabel(run.summary.operational, 'total_cost_usd') }}</span><span>Cost score: {{ run.summary.fitness.cost_score == null ? 'n/a' : percent(run.summary.fitness.cost_score) }}</span><span>Overall score: {{ percent(run.summary.fitness.score) }}</span></div>
+              <p v-if="run.summary.operational.pricing_configured === false" class="muted">Cost is not estimated. Set this provider's input_usd_per_million and output_usd_per_million in private config.toml, then rerun the evaluation.</p>
+              <p v-else-if="run.summary.operational.cost_estimated_cases < run.summary.operational.cost_total_cases" class="muted">Cost is estimated for {{ run.summary.operational.cost_estimated_cases }} of {{ run.summary.operational.cost_total_cases }} cases. Calls without token usage may still be billed.</p>
               <details style="margin-top:16px"><summary>F1 by case type</summary><div class="wide"><table>
                 <thead><tr><th>Case type</th><th>Precision</th><th>Recall</th><th>F1</th><th>Cases</th></tr></thead>
                 <tbody><tr v-for="(metrics, caseType) in run.summary.per_class_f1" :key="caseType"><td>{{ caseType }}</td><td>{{ percent(metrics.precision) }}</td><td>{{ percent(metrics.recall) }}</td><td>{{ percent(metrics.f1) }}</td><td>{{ metrics.support }}</td></tr></tbody>
@@ -158,7 +160,10 @@
           passedCaseCount(run) { return run.records.filter(record => this.casePassed(record)).length; },
           visibleCases(run) { const filter=this.caseFilters[run.summary.model] || 'all'; return run.records.filter(record => filter === 'all' || this.casePassed(record) === (filter === 'pass')); },
           issueReason(record) { if (!record.valid) return `${record.validation_error || 'INVALID_RESULT'}${record.failure_detail ? ': ' + record.failure_detail : ''}`; const items=[]; if (!record.classification_correct) items.push('case type mismatch'); if (!record.priority_correct) items.push('priority mismatch'); if (!record.safety_correct) items.push('safety mismatch'); if (!record.groundedness_pass) items.push('groundedness failed'); return items.join('; '); },
-          allGates(run) { return Object.values(run.summary.gates).every(Boolean); }, percent(value) { return `${(value * 100).toFixed(1)}%`; }, pretty(value) { return JSON.stringify(value,null,2); },
+          allGates(run) { return Object.values(run.summary.gates).every(Boolean); }, percent(value) { return `${(value * 100).toFixed(1)}%`; },
+          money(value) { return value == null ? 'n/a' : `$${Number(value).toPrecision(4)}`; },
+          costLabel(operational, field) { if (operational.pricing_configured === undefined && operational[field] === 0) return 'unknown (older run)'; return this.money(operational[field]); },
+          pretty(value) { return JSON.stringify(value,null,2); },
         }
       }).mount('#app');
     </script>

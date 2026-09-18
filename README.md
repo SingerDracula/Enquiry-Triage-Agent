@@ -69,6 +69,8 @@ Provider URLs must use HTTPS (plain HTTP is accepted only for localhost developm
 
 Copy the versioned template to the private configuration file, then set the model ID and API key there. `config.toml` is ignored by Git, so it will not be committed.
 
+For cost estimates, also set each provider's current `input_usd_per_million` and `output_usd_per_million` in `config.toml`. The values are USD per million tokens and must come from the provider's pricing page for the selected model. Zero template values mean the price is unknown; evaluation displays cost as unavailable and gives its cost component a neutral score instead of treating it as free. If a provider is genuinely free, set `pricing_is_free = true` with both rates at zero. Cost estimates use returned token counts; calls that fail before token usage is available may still be billed. Saved evaluations retain their original cost data, so rerun an evaluation after correcting prices.
+
 ```bash
 cp config.example.toml config.toml
 ```

@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from enquiry_triage.agent import TriageAgent
 from enquiry_triage.cli import build_parser
-from enquiry_triage.evaluation import compare_agents, default_results_dir, load_inquiries, write_comparison
+from enquiry_triage.evaluation import compare_agents, default_results_dir, evaluate_agent, load_inquiries, write_comparison
 from enquiry_triage.models import Inquiry, ProviderResponse, ReviewDecision, Usage
 from enquiry_triage.providers import DemoRuleBasedProvider
 from enquiry_triage.review import ReviewError, ReviewStore
@@ -27,6 +27,29 @@ class BrokenProvider:
 
     def generate(self, *, system_prompt: str, email_text: str, response_schema: dict) -> ProviderResponse:
         return ProviderResponse(model_name=self.name, content="not json", latency_ms=1.0, usage=Usage())
+
+
+class TokenProvider:
+    name = "token-provider"
+
+    def __init__(self, input_price: float = 0, output_price: float = 0) -> None:
+        self.input_usd_per_million = input_price
+        self.output_usd_per_million = output_price
+
+    def generate(self, *, system_prompt: str, email_text: str, response_schema: dict) -> ProviderResponse:
+        demo = DemoRuleBasedProvider().generate(
+            system_prompt=system_prompt, email_text=email_text, response_schema=response_schema
+        )
+        return ProviderResponse(
+            model_name=self.name,
+            content=demo.content,
+            latency_ms=1,
+            usage=Usage(
+                input_tokens=100,
+                output_tokens=50,
+                cost_usd=(100 * self.input_usd_per_million + 50 * self.output_usd_per_million) / 1_000_000,
+            ),
+        )
 
 
 class ReviewAndEvaluationTests(unittest.TestCase):
@@ -87,6 +110,21 @@ class ReviewAndEvaluationTests(unittest.TestCase):
                 comparison["runs"][0]["records"][0]["draft_reply"],
             )
             self.assertNotIn("draft_reply", records.read_text(encoding="utf-8").splitlines()[0])
+
+    def test_unconfigured_price_does_not_receive_a_perfect_cost_score(self) -> None:
+        golden = load_inquiries(ROOT / "data" / "golden_set.jsonl")
+        run = evaluate_agent(TriageAgent(TokenProvider()), golden)
+        self.assertIsNone(run["summary"]["operational"]["average_cost_usd"])
+        self.assertIsNone(run["summary"]["fitness"]["cost_score"])
+        self.assertEqual(run["summary"]["operational"]["cost_estimated_cases"], 2)
+        self.assertTrue(all(record["cost_usd"] == 0 for record in run["records"] if record["cost_usd"] is not None))
+
+    def test_configured_price_uses_reported_token_counts(self) -> None:
+        golden = load_inquiries(ROOT / "data" / "golden_set.jsonl")
+        run = evaluate_agent(TriageAgent(TokenProvider(input_price=1, output_price=2)), golden)
+        self.assertEqual(run["summary"]["operational"]["average_cost_usd"], 0.00018667)
+        self.assertEqual(run["summary"]["operational"]["cost_estimated_cases"], len(golden))
+        self.assertAlmostEqual(run["summary"]["fitness"]["cost_score"], 0.9907)
 
     def test_csv_output_escapes_formula_like_identifiers(self) -> None:
         comparison = {
