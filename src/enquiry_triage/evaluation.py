@@ -166,7 +166,7 @@ def evaluate_agent(agent: TriageAgent, inquiries: Iterable[Inquiry]) -> dict[str
     for inquiry in inquiries:
         print(f"Evaluating {agent.provider.name} on inquiry {inquiry.id}")
         local_refusal = requires_refusal(f"{inquiry.subject}\n{inquiry.body}")
-        attempt = agent.triage(inquiry)
+        attempt = agent.triage(inquiry, retain_rejected_output=True)
         result = attempt.result
         valid = attempt.is_valid and result is not None
         expected_case_type = inquiry.expected_case_type.value if inquiry.expected_case_type else None
@@ -193,6 +193,8 @@ def evaluate_agent(agent: TriageAgent, inquiries: Iterable[Inquiry]) -> dict[str
                 "groundedness_pass": valid and groundedness_passes(inquiry, result),
                 "reply_quality_score": round(_reply_quality_heuristic(attempt), 4),
                 "draft_reply": result.draft_reply if result else None,
+                "rejected_draft_reply": attempt.rejected_draft_reply,
+                "rejected_model_output": attempt.rejected_model_output,
                 "confidence": result.confidence.score if result else None,
                 "latency_ms": round(attempt.latency_ms, 3),
                 "input_tokens": attempt.usage.input_tokens,
@@ -331,7 +333,11 @@ def write_comparison(comparison: dict[str, Any], output_dir: Path) -> tuple[Path
     records_path = output_dir / f"comparison_{stamp}_records.csv"
     summary_path.write_text(json.dumps(comparison, indent=2, ensure_ascii=False), encoding="utf-8")
     rows = [
-        {key: _escape_csv_value(value) for key, value in {"model": run["summary"]["model"], **record}.items() if key != "draft_reply"}
+        {
+            key: _escape_csv_value(value)
+            for key, value in {"model": run["summary"]["model"], **record}.items()
+            if key not in {"draft_reply", "rejected_draft_reply", "rejected_model_output"}
+        }
         for run in comparison["runs"]
         for record in run["records"]
     ]

@@ -116,6 +116,8 @@ class TriageAttempt(BaseModel):
     result: TriageResult | None = None
     validation_error: str | None = None
     failure_detail: str | None = None
+    rejected_draft_reply: str | None = None
+    rejected_model_output: str | None = None
     latency_ms: float = Field(default=0.0, ge=0.0)
     usage: Usage = Field(default_factory=Usage)
 

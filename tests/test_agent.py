@@ -13,7 +13,10 @@ class MalformedProvider:
     def generate(self, *, system_prompt: str, email_text: str, response_schema: dict) -> ProviderResponse:
         return ProviderResponse(
             model_name=self.name,
-            content='{"case_type": "NOT_A_REAL_TYPE", "secret": "POL-SECRET-481"}',
+            content=(
+                '{"case_type": "NOT_A_REAL_TYPE", "draft_reply": "Hello, please contact our team.", '
+                '"secret": "POL-SECRET-481"}'
+            ),
             latency_ms=1.0,
             usage=Usage(),
         )
@@ -77,6 +80,16 @@ class AgentTests(unittest.TestCase):
         self.assertNotIn("POL-SECRET-481", attempt.validation_error or "")
         self.assertIn("case_type (enum)", attempt.failure_detail or "")
         self.assertNotIn("POL-SECRET-481", attempt.failure_detail or "")
+        self.assertIsNone(attempt.rejected_model_output)
+
+    def test_evaluation_can_retain_rejected_schema_output(self) -> None:
+        attempt = TriageAgent(MalformedProvider()).triage(
+            Inquiry(id="case-002", body="Hello"), retain_rejected_output=True
+        )
+
+        self.assertFalse(attempt.is_valid)
+        self.assertIn("NOT_A_REAL_TYPE", attempt.rejected_model_output or "")
+        self.assertEqual(attempt.rejected_draft_reply, "Hello, please contact our team.")
 
     def test_prompt_injection_is_refused(self) -> None:
         inquiry = Inquiry(
@@ -99,6 +112,16 @@ class AgentTests(unittest.TestCase):
         self.assertFalse(attempt.is_valid)
         self.assertEqual(attempt.validation_error, "SAFETY_POLICY_FAILED: UNSUPPORTED_NUMERIC_FACT")
         self.assertIn("unsupported numeric fact", attempt.failure_detail or "")
+        self.assertIsNone(attempt.rejected_draft_reply)
+
+    def test_evaluation_retains_rejected_draft_without_validating_it(self) -> None:
+        attempt = TriageAgent(FabricatingProvider()).triage(
+            Inquiry(id="case-004", body="My premium is 20 dollars."), retain_rejected_output=True
+        )
+
+        self.assertFalse(attempt.is_valid)
+        self.assertIsNone(attempt.result)
+        self.assertIn("99 dollars", attempt.rejected_draft_reply or "")
 
     def test_provider_failure_reports_reason_and_latency(self) -> None:
         attempt = TriageAgent(RejectingProvider()).triage(Inquiry(id="case-005", body="Hello"))

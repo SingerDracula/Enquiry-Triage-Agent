@@ -125,7 +125,15 @@
                   <td>{{ percent(record.reply_quality_score) }}</td>
                   <td>{{ record.latency_ms.toFixed(0) }} ms</td>
                   <td class="reason-cell">{{ casePassed(record) ? 'All checks passed' : issueReason(record) }}</td>
-                </tr><tr v-if="expandedCases[caseKey(run, record)]"><td class="draft-cell" colspan="11"><strong>Reply draft</strong><p v-if="record.draft_reply == null" class="muted">{{ record.draft_reply === undefined ? 'This older evaluation did not save reply drafts.' : 'No valid reply draft was produced for this case.' }}</p><pre v-else>{{ record.draft_reply }}</pre></td></tr></template></tbody>
+                </tr><tr v-if="expandedCases[caseKey(run, record)]"><td class="draft-cell" colspan="11">
+                  <strong>{{ record.valid ? 'Validated reply draft' : 'Rejected model reply · not queued for review' }}</strong>
+                  <p v-if="!record.valid" class="muted">{{ issueReason(record) }}</p>
+                  <pre v-if="record.draft_reply != null">{{ record.draft_reply }}</pre>
+                  <pre v-else-if="record.rejected_draft_reply != null">{{ record.rejected_draft_reply }}</pre>
+                  <pre v-else-if="record.rejected_model_output != null">{{ record.rejected_model_output }}</pre>
+                  <p v-else class="muted">{{ record.draft_reply === undefined ? 'This older evaluation did not save reply drafts.' : 'No model reply was returned or saved for this case.' }}</p>
+                  <details v-if="record.rejected_draft_reply != null && record.rejected_model_output != null"><summary>Rejected model output (first 20,000 characters)</summary><pre>{{ record.rejected_model_output }}</pre></details>
+                </td></tr></template></tbody>
               </table></div>
             </div>
           </template>

@@ -111,6 +111,25 @@ class ReviewAndEvaluationTests(unittest.TestCase):
             )
             self.assertNotIn("draft_reply", records.read_text(encoding="utf-8").splitlines()[0])
 
+    def test_rejected_output_is_in_evaluation_json_but_not_metrics_csv(self) -> None:
+        inquiry = Inquiry(
+            id="rejected-001", body="Please explain my coverage.",
+            expected_case_type="OTHER", expected_priority="URGENT",
+            expected_safety_status="PENDING_REVIEW",
+        )
+        run = evaluate_agent(TriageAgent(BrokenProvider()), [inquiry])
+        record = run["records"][0]
+        self.assertFalse(record["valid"])
+        self.assertIsNone(record["draft_reply"])
+        self.assertEqual(record["rejected_model_output"], "not json")
+        with tempfile.TemporaryDirectory() as directory:
+            summary, records = write_comparison({"runs": [run]}, Path(directory))
+            self.assertEqual(
+                json.loads(summary.read_text(encoding="utf-8"))["runs"][0]["records"][0]["rejected_model_output"],
+                "not json",
+            )
+            self.assertNotIn("rejected_model_output", records.read_text(encoding="utf-8"))
+
     def test_unconfigured_price_does_not_receive_a_perfect_cost_score(self) -> None:
         golden = load_inquiries(ROOT / "data" / "golden_set.jsonl")
         run = evaluate_agent(TriageAgent(TokenProvider()), golden)
