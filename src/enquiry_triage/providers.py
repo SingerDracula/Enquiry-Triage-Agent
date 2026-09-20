@@ -477,6 +477,20 @@ def _optional_string(settings: dict[str, object], key: str, default: str, provid
     return value.strip()
 
 
+def _optional_bool(settings: dict[str, object], key: str, default: bool, provider_name: str) -> bool:
+    value = settings.get(key, default)
+    if not isinstance(value, bool):
+        raise ProviderError(f"Provider '{provider_name}' has an invalid boolean '{key}' in config.toml")
+    return value
+
+
+def _positive_number(settings: dict[str, object], key: str, default: float, provider_name: str) -> float:
+    value = settings.get(key, default)
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        raise ProviderError(f"Provider '{provider_name}' has an invalid positive '{key}' in config.toml")
+    return float(value)
+
+
 def _price(settings: dict[str, object], key: str, provider_name: str) -> float:
     value = settings.get(key, 0)
     if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
@@ -498,8 +512,11 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
 
     if spec in {"demo-fast", "demo-conservative"}:
         return DemoRuleBasedProvider(profile=spec.removeprefix("demo-"))
-    if ":" in spec or spec not in {"gpt", "deepseek", "gemini", "glm", "compatible"}:
-        raise ProviderError("Unknown provider. Use demo-fast, demo-conservative, gpt, deepseek, gemini, glm, or compatible.")
+    supported = {"gpt", "deepseek", "gemini", "glm", "jev", "compatible"}
+    if ":" in spec or spec not in supported:
+        raise ProviderError(
+            "Unknown provider. Use demo-fast, demo-conservative, gpt, deepseek, gemini, glm, jev, or compatible."
+        )
 
     settings_by_name = _load_provider_settings(config_path or Path.cwd() / "config.toml")
     settings = settings_by_name.get(spec)
@@ -507,6 +524,31 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
         raise ProviderError(f"Provider '{spec}' is missing [providers.{spec}] in config.toml")
     model = _required_string(settings, "model", spec)
     api_key = _required_string(settings, "api_key", spec)
+
+    if spec == "jev":
+        from .jev import VercelJevClassificationProvider
+
+        base_provider_name = _required_string(settings, "base_provider", spec)
+        if base_provider_name == "jev":
+            raise ProviderError("Provider 'jev' cannot use itself as 'base_provider'")
+        base_provider = provider_from_spec(base_provider_name, config_path=config_path)
+        base_url = _optional_string(
+            settings, "base_url", "https://ai-gateway.vercel.sh/v1", spec
+        )
+        _validate_base_url(base_url)
+        return VercelJevClassificationProvider(
+            base_provider=base_provider,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            jev_input_usd_per_million=_price(settings, "input_usd_per_million", spec),
+            jev_output_usd_per_million=_price(settings, "output_usd_per_million", spec),
+            jev_pricing_is_free=_pricing_is_free(settings, spec),
+            timeout_seconds=_positive_number(settings, "timeout_seconds", 30, spec),
+            zero_data_retention=_optional_bool(
+                settings, "zero_data_retention", True, spec
+            ),
+        )
 
     if spec == "gemini":
         base_url = _optional_string(

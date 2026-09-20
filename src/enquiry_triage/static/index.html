@@ -145,7 +145,7 @@
       createApp({
         data() { return {
           tabs: [{id:'triage',label:'Triage'}, {id:'review',label:'Review'}, {id:'evaluate',label:'Evaluate'}], tab:'triage',
-          providers:['demo-fast','gpt','deepseek','gemini','glm'], busy:false, error:'', notice:'',
+          providers:['demo-fast','gpt','deepseek','gemini','glm','jev'], busy:false, error:'', notice:'',
           triageForm:{subject:'',body:'',provider:'demo-fast',queue_for_review:true}, triageResult:null,
           reviews:[], selectedReview:null, editedReply:'', evaluationProviders:['deepseek','glm'], evaluation:null, evaluationJob:null, evaluationPollTimer:null, caseFilters:{}, expandedCases:{}, history:[], selectedHistory:'',
         }; },

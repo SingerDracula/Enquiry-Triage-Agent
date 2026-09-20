@@ -8,7 +8,8 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
-from enquiry_triage.models import json_schema
+from enquiry_triage.jev import VercelJevClassificationProvider
+from enquiry_triage.models import TriageResult, json_schema
 from enquiry_triage.providers import (
     GeminiGenerateContentProvider,
     OpenAICompatibleProvider,
@@ -16,6 +17,40 @@ from enquiry_triage.providers import (
     StructuredOutputMode,
     provider_from_spec,
 )
+
+
+class FixedDraftProvider:
+    name = "draft-model"
+    input_usd_per_million = 1.0
+    output_usd_per_million = 2.0
+    pricing_is_free = False
+
+    def __init__(self, content: str | None = None) -> None:
+        self.last_system_prompt: str | None = None
+        self.content = content or json.dumps(
+            {
+                "case_type": "OTHER",
+                "priority": "LOW",
+                "summary": "Customer asks about a duplicate payment.",
+                "draft_reply": "Hello, thank you for contacting us. A team member will review this. Kind regards.",
+                "confidence": {
+                    "score": 0.55,
+                    "methodology": "The original generator selected a broad fallback category.",
+                },
+                "safety_status": "PENDING_REVIEW",
+            }
+        )
+
+    def generate(self, *, system_prompt: str, email_text: str, response_schema: dict):
+        from enquiry_triage.models import ProviderResponse, Usage
+
+        self.last_system_prompt = system_prompt
+        return ProviderResponse(
+            model_name=self.name,
+            content=self.content,
+            latency_ms=10,
+            usage=Usage(input_tokens=100, output_tokens=50, cost_usd=0.0002),
+        )
 
 
 class ProviderPayloadTests(unittest.TestCase):
@@ -217,6 +252,153 @@ class ProviderPayloadTests(unittest.TestCase):
 
         self.assertIsInstance(provider, GeminiGenerateContentProvider)
         self.assertEqual(provider.base_url, "https://generativelanguage.googleapis.com/v1beta")
+
+
+class VercelJevClassificationTests(unittest.TestCase):
+    def _provider(self, content: str | None = None) -> VercelJevClassificationProvider:
+        return VercelJevClassificationProvider(
+            base_provider=FixedDraftProvider(content),
+            api_key="vercel-test-key",
+            jev_input_usd_per_million=0.04,
+        )
+
+    def test_payload_uses_two_typed_choice_questions_and_gateway_privacy_options(self) -> None:
+        payload = self._provider().build_payload(email_text="Subject: Duplicate payment")
+
+        self.assertEqual(payload["model"], "typesafe-ai/jev")
+        self.assertEqual(payload["questions"]["case_type"]["type"], "choice")
+        self.assertEqual(
+            set(payload["questions"]["case_type"]["criteria"]),
+            {"POLICY_QUERY", "PREMIUM_BILLING", "ADDRESS_CHANGE", "CLAIM", "COMPLAINT", "OTHER"},
+        )
+        self.assertEqual(
+            set(payload["questions"]["priority"]["criteria"]), {"URGENT", "NORMAL", "LOW"}
+        )
+        self.assertEqual(payload["providerOptions"]["gateway"]["only"], ["typesafe-ai"])
+        self.assertTrue(payload["providerOptions"]["gateway"]["zeroDataRetention"])
+        self.assertIn("untrusted customer data", payload["state"]["trust_boundary"])
+
+    def test_jev_overrides_only_classification_and_its_confidence(self) -> None:
+        response_body = {
+            "model": "typesafe-ai/jev",
+            "answers": {
+                "case_type": {
+                    "type": "choice",
+                    "choice": "PREMIUM_BILLING",
+                    "probabilities": {"PREMIUM_BILLING": 0.97, "OTHER": 0.03},
+                },
+                "priority": {
+                    "type": "choice",
+                    "choice": "NORMAL",
+                    "probabilities": {"URGENT": 0.01, "NORMAL": 0.94, "LOW": 0.05},
+                },
+            },
+            "usage": {"inputTokens": 25, "outputTokens": 4},
+            "providerMetadata": {"gateway": {"cost": "0.000001"}},
+        }
+        fake_response = io.BytesIO(json.dumps(response_body).encode("utf-8"))
+        provider = self._provider()
+
+        with patch("enquiry_triage.jev.urllib.request.urlopen", return_value=fake_response) as mocked:
+            response = provider.generate(
+                system_prompt="Return JSON.",
+                email_text="Subject: Duplicate payment",
+                response_schema=json_schema(),
+            )
+
+        result = json.loads(response.content)
+        validated = TriageResult.model_validate(result)
+        self.assertEqual(result["case_type"], "PREMIUM_BILLING")
+        self.assertEqual(result["priority"], "NORMAL")
+        self.assertEqual(result["summary"], "Customer asks about a duplicate payment.")
+        self.assertIn("A team member will review this", result["draft_reply"])
+        self.assertEqual(result["safety_status"], "PENDING_REVIEW")
+        self.assertEqual(result["confidence"]["score"], 0.97)
+        self.assertIn("Jev choice probability", result["confidence"]["methodology"])
+        self.assertEqual(validated.case_type.value, "PREMIUM_BILLING")
+        self.assertEqual(response.model_name, "typesafe-ai/jev+draft-model")
+        self.assertEqual(response.usage.input_tokens, 125)
+        self.assertEqual(response.usage.output_tokens, 54)
+        self.assertAlmostEqual(response.usage.cost_usd, 0.000201)
+        self.assertIn("case_type: PREMIUM_BILLING", provider.base_provider.last_system_prompt or "")
+        self.assertIn("priority: NORMAL", provider.base_provider.last_system_prompt or "")
+        request = mocked.call_args.args[0]
+        self.assertEqual(request.full_url, "https://ai-gateway.vercel.sh/v1/evaluate")
+        self.assertEqual(request.headers["Authorization"], "Bearer vercel-test-key")
+
+    def test_invalid_choice_fails_visibly_instead_of_falling_back(self) -> None:
+        response_body = {
+            "answers": {
+                "case_type": {
+                    "type": "choice",
+                    "choice": "UNKNOWN",
+                    "probabilities": {"UNKNOWN": 1.0},
+                },
+                "priority": {
+                    "type": "choice",
+                    "choice": "NORMAL",
+                    "probabilities": {"NORMAL": 1.0},
+                },
+            }
+        }
+        fake_response = io.BytesIO(json.dumps(response_body).encode("utf-8"))
+
+        with patch("enquiry_triage.jev.urllib.request.urlopen", return_value=fake_response):
+            with self.assertRaisesRegex(ProviderError, "invalid 'case_type'"):
+                self._provider().generate(
+                    system_prompt="Return JSON.",
+                    email_text="Subject: test",
+                    response_schema=json_schema(),
+                )
+
+    def test_malformed_base_output_is_preserved_after_jev_classification(self) -> None:
+        response_body = {
+            "answers": {
+                "case_type": {
+                    "type": "choice",
+                    "choice": "OTHER",
+                    "probabilities": {"OTHER": 0.8},
+                },
+                "priority": {
+                    "type": "choice",
+                    "choice": "NORMAL",
+                    "probabilities": {"NORMAL": 0.7},
+                },
+            },
+            "usage": {"inputTokens": 5, "outputTokens": 2},
+        }
+        fake_response = io.BytesIO(json.dumps(response_body).encode("utf-8"))
+        with patch("enquiry_triage.jev.urllib.request.urlopen", return_value=fake_response) as mocked:
+            response = self._provider("not-json").generate(
+                system_prompt="Return JSON.",
+                email_text="Subject: test",
+                response_schema=json_schema(),
+            )
+
+        self.assertEqual(response.content, "not-json")
+        self.assertEqual(response.model_name, "typesafe-ai/jev+draft-model")
+        self.assertEqual(response.usage.input_tokens, 105)
+        mocked.assert_called_once()
+
+    def test_provider_factory_wraps_the_configured_base_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.toml"
+            config_path.write_text(
+                '[providers.deepseek]\nmodel = "deepseek-test"\napi_key = "deepseek-key"\n'
+                'base_url = "https://api.deepseek.com"\n\n'
+                '[providers.jev]\nmodel = "typesafe-ai/jev"\napi_key = "vercel-key"\n'
+                'base_provider = "deepseek"\nzero_data_retention = true\n'
+                'input_usd_per_million = 0.04\n',
+                encoding="utf-8",
+            )
+            provider = provider_from_spec("jev", config_path=config_path)
+
+        self.assertIsInstance(provider, VercelJevClassificationProvider)
+        self.assertIsInstance(provider.base_provider, OpenAICompatibleProvider)
+        self.assertEqual(provider.base_provider.model, "deepseek-test")
+        self.assertEqual(provider.name, "typesafe-ai/jev+deepseek-test")
+        self.assertEqual(provider.input_usd_per_million, 0.04)
+        self.assertFalse(provider.pricing_is_free)
 
 
 class ProviderFailureDiagnosticsTests(unittest.TestCase):
