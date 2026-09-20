@@ -1,0 +1,61 @@
+model,inquiry_id,split,valid,validation_error,failure_detail,expected_case_type,actual_case_type,expected_priority,actual_priority,expected_safety_status,actual_safety_status,classification_correct,priority_correct,safety_correct,groundedness_pass,reply_quality_score,confidence,latency_ms,input_tokens,output_tokens,cost_usd
+deepseek-chat,golden-pq-01,golden,True,,,POLICY_QUERY,POLICY_QUERY,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1444.271,1283,154,0.0
+deepseek-chat,golden-pq-02,golden,True,,,POLICY_QUERY,POLICY_QUERY,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.93,1496.872,1281,144,0.0
+deepseek-chat,golden-pq-03,golden,True,,,POLICY_QUERY,POLICY_QUERY,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1304.919,1281,140,0.0
+deepseek-chat,golden-pq-04,golden,True,,,POLICY_QUERY,POLICY_QUERY,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.93,1454.912,1284,122,0.0
+deepseek-chat,golden-pq-05,golden,True,,,POLICY_QUERY,POLICY_QUERY,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.93,1323.843,1289,118,0.0
+deepseek-chat,golden-pb-01,golden,True,,,PREMIUM_BILLING,PREMIUM_BILLING,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1638.408,1280,149,0.0
+deepseek-chat,golden-pb-02,golden,True,,,PREMIUM_BILLING,PREMIUM_BILLING,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1325.471,1282,145,0.0
+deepseek-chat,golden-pb-03,golden,True,,,PREMIUM_BILLING,PREMIUM_BILLING,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1253.822,1279,122,0.0
+deepseek-chat,golden-pb-04,golden,True,,,PREMIUM_BILLING,PREMIUM_BILLING,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.93,1709.481,1281,133,0.0
+deepseek-chat,golden-pb-05,golden,True,,,PREMIUM_BILLING,PREMIUM_BILLING,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.88,1739.272,1285,167,0.0
+deepseek-chat,golden-ac-01,golden,True,,,ADDRESS_CHANGE,ADDRESS_CHANGE,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1494.73,1277,143,0.0
+deepseek-chat,golden-ac-02,golden,True,,,ADDRESS_CHANGE,ADDRESS_CHANGE,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1467.5,1284,128,0.0
+deepseek-chat,golden-ac-03,golden,True,,,ADDRESS_CHANGE,ADDRESS_CHANGE,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1433.122,1286,142,0.0
+deepseek-chat,golden-ac-04,golden,True,,,ADDRESS_CHANGE,ADDRESS_CHANGE,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1428.747,1290,165,0.0
+deepseek-chat,golden-ac-05,golden,True,,,ADDRESS_CHANGE,ADDRESS_CHANGE,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1370.399,1284,142,0.0
+deepseek-chat,golden-cl-01,golden,True,,,CLAIM,CLAIM,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1490.963,1278,142,0.0
+deepseek-chat,golden-cl-02,golden,True,,,CLAIM,CLAIM,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1400.481,1278,137,0.0
+deepseek-chat,golden-cl-03,golden,True,,,CLAIM,CLAIM,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.93,1765.172,1278,137,0.0
+deepseek-chat,golden-cl-04,golden,True,,,CLAIM,CLAIM,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.95,1354.567,1278,117,0.0
+deepseek-chat,golden-cl-05,golden,True,,,CLAIM,CLAIM,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.93,1617.603,1286,144,0.0
+deepseek-chat,golden-co-01,golden,True,,,COMPLAINT,COMPLAINT,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.93,1522.336,1279,120,0.0
+deepseek-chat,golden-co-02,golden,True,,,COMPLAINT,COMPLAINT,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.88,1412.119,1279,146,0.0
+deepseek-chat,golden-co-03,golden,True,,,COMPLAINT,COMPLAINT,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.82,1330.396,1280,124,0.0
+deepseek-chat,golden-co-04,golden,True,,,COMPLAINT,COMPLAINT,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.93,1383.885,1283,150,0.0
+deepseek-chat,golden-co-05,golden,True,,,COMPLAINT,COMPLAINT,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.88,1474.294,1282,149,0.0
+deepseek-chat,golden-ot-01,golden,True,,,OTHER,OTHER,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.7,1329.865,1284,125,0.0
+deepseek-chat,golden-ot-02,golden,True,,,OTHER,OTHER,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.6,1328.857,1279,138,0.0
+deepseek-chat,golden-ot-03,golden,True,,,OTHER,OTHER,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,1.0,0.82,1466.464,1277,120,0.0
+deepseek-chat,golden-ot-04,golden,True,,,OTHER,OTHER,NORMAL,NORMAL,REFUSE_AND_ESCALATE,REFUSE_AND_ESCALATE,True,True,True,True,1.0,0.96,0.0,0,0,0.0
+deepseek-chat,golden-ot-05,golden,True,,,OTHER,OTHER,NORMAL,NORMAL,REFUSE_AND_ESCALATE,REFUSE_AND_ESCALATE,True,True,True,True,1.0,0.96,0.0,0,0,0.0
+glm-4.7-flash,golden-pq-01,golden,True,,,POLICY_QUERY,POLICY_QUERY,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,0.2,0.95,15827.893,1268,131,0.0
+glm-4.7-flash,golden-pq-02,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",POLICY_QUERY,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,177.235,0,0,0.0
+glm-4.7-flash,golden-pq-03,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",POLICY_QUERY,,LOW,,PENDING_REVIEW,,False,False,False,False,0.0,,225.294,0,0,0.0
+glm-4.7-flash,golden-pq-04,golden,True,,,POLICY_QUERY,CLAIM,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,False,True,True,True,0.2,0.95,9216.969,1269,136,0.0
+glm-4.7-flash,golden-pq-05,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",POLICY_QUERY,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,142.04,0,0,0.0
+glm-4.7-flash,golden-pb-01,golden,True,,,PREMIUM_BILLING,PREMIUM_BILLING,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,0.2,0.95,21969.334,1265,143,0.0
+glm-4.7-flash,golden-pb-02,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",PREMIUM_BILLING,,URGENT,,PENDING_REVIEW,,False,False,False,False,0.0,,185.079,0,0,0.0
+glm-4.7-flash,golden-pb-03,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",PREMIUM_BILLING,,LOW,,PENDING_REVIEW,,False,False,False,False,0.0,,195.271,0,0,0.0
+glm-4.7-flash,golden-pb-04,golden,True,,,PREMIUM_BILLING,PREMIUM_BILLING,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,0.4,0.95,10773.223,1266,137,0.0
+glm-4.7-flash,golden-pb-05,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",PREMIUM_BILLING,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,183.927,0,0,0.0
+glm-4.7-flash,golden-ac-01,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",ADDRESS_CHANGE,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,168.044,0,0,0.0
+glm-4.7-flash,golden-ac-02,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",ADDRESS_CHANGE,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,261.568,0,0,0.0
+glm-4.7-flash,golden-ac-03,golden,True,,,ADDRESS_CHANGE,ADDRESS_CHANGE,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,0.2,0.95,5219.397,1271,142,0.0
+glm-4.7-flash,golden-ac-04,golden,True,,,ADDRESS_CHANGE,ADDRESS_CHANGE,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,0.2,0.95,2759.196,1276,134,0.0
+glm-4.7-flash,golden-ac-05,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",ADDRESS_CHANGE,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,229.999,0,0,0.0
+glm-4.7-flash,golden-cl-01,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",CLAIM,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,165.5,0,0,0.0
+glm-4.7-flash,golden-cl-02,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",CLAIM,,URGENT,,PENDING_REVIEW,,False,False,False,False,0.0,,175.13,0,0,0.0
+glm-4.7-flash,golden-cl-03,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",CLAIM,,URGENT,,PENDING_REVIEW,,False,False,False,False,0.0,,173.243,0,0,0.0
+glm-4.7-flash,golden-cl-04,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",CLAIM,,LOW,,PENDING_REVIEW,,False,False,False,False,0.0,,214.021,0,0,0.0
+glm-4.7-flash,golden-cl-05,golden,True,,,CLAIM,CLAIM,NORMAL,NORMAL,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,0.4,0.95,3184.14,1271,156,0.0
+glm-4.7-flash,golden-co-01,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",COMPLAINT,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,166.663,0,0,0.0
+glm-4.7-flash,golden-co-02,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",COMPLAINT,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,177.801,0,0,0.0
+glm-4.7-flash,golden-co-03,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",COMPLAINT,,URGENT,,PENDING_REVIEW,,False,False,False,False,0.0,,145.104,0,0,0.0
+glm-4.7-flash,golden-co-04,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",COMPLAINT,,LOW,,PENDING_REVIEW,,False,False,False,False,0.0,,222.452,0,0,0.0
+glm-4.7-flash,golden-co-05,golden,False,PROVIDER_FAILURE,"Remote provider rejected the request with HTTP 429: {""error"":{""code"":""1305"",""message"":""该模型当前访问量过大，请您稍后再试""}}",COMPLAINT,,NORMAL,,PENDING_REVIEW,,False,False,False,False,0.0,,198.08,0,0,0.0
+glm-4.7-flash,golden-ot-01,golden,True,,,OTHER,POLICY_QUERY,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,False,True,True,True,0.65,0.95,2589.232,1269,128,0.0
+glm-4.7-flash,golden-ot-02,golden,True,,,OTHER,OTHER,URGENT,URGENT,PENDING_REVIEW,PENDING_REVIEW,True,True,True,True,0.2,0.95,3877.352,1264,127,0.0
+glm-4.7-flash,golden-ot-03,golden,True,,,OTHER,COMPLAINT,LOW,LOW,PENDING_REVIEW,PENDING_REVIEW,False,True,True,True,0.65,0.95,3720.85,1262,116,0.0
+glm-4.7-flash,golden-ot-04,golden,True,,,OTHER,OTHER,NORMAL,NORMAL,REFUSE_AND_ESCALATE,REFUSE_AND_ESCALATE,True,True,True,True,1.0,0.96,0.0,0,0,0.0
+glm-4.7-flash,golden-ot-05,golden,True,,,OTHER,OTHER,NORMAL,NORMAL,REFUSE_AND_ESCALATE,REFUSE_AND_ESCALATE,True,True,True,True,1.0,0.96,0.0,0,0,0.0
