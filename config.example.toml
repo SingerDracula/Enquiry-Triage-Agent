@@ -36,16 +36,15 @@ input_usd_per_million = 0
 output_usd_per_million = 0
 # pricing_is_free = true
 
-# Vercel AI Gateway Jev classifies only case_type and priority. The configured
+# OpenRouter Jev classifies only case_type and priority. The configured
 # base provider still generates summary, draft_reply, and safety_status.
 [providers.jev]
-model = "typesafe-ai/jev"
-api_key = "replace_with_your_vercel_ai_gateway_key"
+model = "typesafe/jev-1.13"
+api_key = "replace_with_your_openrouter_api_key"
 base_provider = "deepseek"
-# base_url = "https://ai-gateway.vercel.sh/v1"
-zero_data_retention = true
+# base_url = "https://openrouter.ai/api/alpha"
 timeout_seconds = 30
-input_usd_per_million = 0.04
+input_usd_per_million = 0.042
 output_usd_per_million = 0
 # If Jev is genuinely free, set both Jev prices to zero. The composite is only
 # treated as free when base_provider also has pricing_is_free = true.

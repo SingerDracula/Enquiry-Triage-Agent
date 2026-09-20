@@ -10,7 +10,7 @@ A production-minded MVP for classifying inbound insurance customer emails, draft
 - 48 synthetic labelled enquiries: 30 frozen golden records and 18 development records. They cover all six case types, urgent/normal/low priorities, ambiguous messages, angry tone, missing information, prompt injection, and unsafe requests.
 - A re-runnable evaluation harness for macro-F1, priority accuracy, urgent recall, groundedness, reply-quality heuristic, calibration, latency, cost, quality gates, and a weighted model comparison.
 - An offline deterministic demo provider so the full workflow and test suite run without credentials. It is a workflow baseline, not a substitute for the case study's two real LLMs.
-- First-class GPT, DeepSeek, Gemini, and Zhipu GLM adapters, plus a Vercel Jev classification overlay, with local Pydantic enforcement for every final result.
+- First-class GPT, DeepSeek, Gemini, and Zhipu GLM adapters, plus an OpenRouter Jev classification overlay, with local Pydantic enforcement for every final result.
 
 ## Quick start
 
@@ -66,7 +66,7 @@ Provider URLs must use HTTPS (plain HTTP is accepted only for localhost developm
 | DeepSeek | `deepseek` | `[providers.deepseek]` | JSON Object mode, explicit prompt contract, then local validation |
 | Google Gemini | `gemini` | `[providers.gemini]` | GenerateContent JSON Schema, then local validation |
 | Zhipu GLM-4.7-Flash | `glm` | `[providers.glm]` | Chat Completions JSON Object mode, then local validation |
-| Vercel Jev + base provider | `jev` | `[providers.jev]` | AI Gateway `/v1/evaluate` Choice answers for `case_type` and `priority` |
+| OpenRouter Jev + base provider | `jev` | `[providers.jev]` | Decisions API `/api/alpha/decisions` Choice answers for `case_type` and `priority` |
 
 Copy the versioned template to the private configuration file, then set the model ID and API key there. `config.toml` is ignored by Git, so it will not be committed.
 
@@ -106,24 +106,24 @@ For DeepSeek Chat Completions, choose `deepseek`. This sends `response_format={"
 
 `glm` uses the official `https://open.bigmodel.cn/api/paas/v4` base URL by default and the `glm-4.7-flash` model ID in the configuration example. It sends JSON Object mode with thinking disabled and validates the response locally; it does not claim server-side strict JSON Schema enforcement. Add the `[providers.glm]` section from `config.example.toml` to an existing private `config.toml` if you are upgrading an existing installation.
 
-### Vercel Jev classification overlay
+### OpenRouter Jev classification overlay
 
-`jev` is intentionally a composite provider because Jev returns typed decisions rather than reply text. The adapter first sends the untrusted email to Vercel AI Gateway `/v1/evaluate` with two independent Choice questions. It then gives those authoritative labels to the configured `base_provider`, which generates `summary`, `draft_reply`, and `safety_status` through the existing pipeline. The adapter finally enforces the Jev labels so a generator cannot replace them. Since the output contract defines `confidence.score` as the probability that `case_type` is correct, that score and its methodology are updated to describe Jev's case-type decision. Token usage, latency, and cost include both sequential calls.
+`jev` is intentionally a composite provider because Jev returns typed decisions rather than reply text. The adapter first sends the untrusted email to OpenRouter's `/api/alpha/decisions` endpoint with two independent Choice questions. It then gives those authoritative labels to the configured `base_provider`, which generates `summary`, `draft_reply`, and `safety_status` through the existing pipeline. The adapter finally enforces the Jev labels so a generator cannot replace them. Since the output contract defines `confidence.score` as the probability that `case_type` is correct, that score and its methodology are updated to describe Jev's case-type decision. Token usage, latency, and cost include both sequential calls.
 
-Create an AI Gateway key in Vercel and add this private configuration; do not commit the real key:
+Create an API key in OpenRouter and add this private configuration; do not commit the real key:
 
 ```toml
 [providers.jev]
-model = "typesafe-ai/jev"
-api_key = "your_vercel_ai_gateway_key"
+model = "typesafe/jev-1.13"
+api_key = "your_openrouter_api_key"
 base_provider = "deepseek"
-zero_data_retention = true
+base_url = "https://openrouter.ai/api/alpha"
 timeout_seconds = 30
-input_usd_per_million = 0.04
+input_usd_per_million = 0.042
 output_usd_per_million = 0
 ```
 
-The request restricts routing to `typesafe-ai` and enables Zero Data Retention. If Jev fails, returns an unknown label, or omits probabilities, the whole attempt fails visibly with `PROVIDER_FAILURE`; it never silently falls back to the base provider's classification. Locally detected refusal cases still stop before either remote provider is called. Check Vercel's current model page before recording pricing, because promotions and rates can change.
+If Jev fails, returns an unknown label, or omits probabilities, the whole attempt fails visibly with `PROVIDER_FAILURE`; it never silently falls back to the base provider's classification. Locally detected refusal cases still stop before either remote provider is called. Check OpenRouter's current Jev model page before recording pricing, because rates can change.
 
 To compare the original base model against the same draft generator with Jev classification:
 

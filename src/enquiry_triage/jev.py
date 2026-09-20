@@ -1,4 +1,4 @@
-"""Vercel AI Gateway Jev adapter for typed enquiry classification."""
+"""OpenRouter Jev adapter for typed enquiry classification."""
 
 from __future__ import annotations
 
@@ -57,9 +57,9 @@ def _usage_integer(value: object) -> int:
     return int(value)
 
 
-def _gateway_cost(payload: dict[str, Any]) -> float | None:
+def _response_cost(payload: dict[str, Any]) -> float | None:
     try:
-        value = payload["providerMetadata"]["gateway"]["cost"]
+        value = payload["usage"]["cost"]
         parsed = float(value)
     except (KeyError, TypeError, ValueError):
         return None
@@ -83,23 +83,22 @@ def _choice_answer(
         if not math.isfinite(probability) or not 0 <= probability <= 1:
             raise ValueError
     except (KeyError, TypeError, ValueError) as exc:
-        raise ProviderError(f"Vercel Jev returned an invalid '{question}' choice answer") from exc
+        raise ProviderError(f"OpenRouter Jev returned an invalid '{question}' choice answer") from exc
     return choice, probability
 
 
 @dataclass(frozen=True)
-class VercelJevClassificationProvider:
+class OpenRouterJevClassificationProvider:
     """Keep a generator's draft fields, but classify case type and priority with Jev."""
 
     base_provider: TriageProvider
     api_key: str
-    model: str = "typesafe-ai/jev"
-    base_url: str = "https://ai-gateway.vercel.sh/v1"
+    model: str = "typesafe/jev-1.13"
+    base_url: str = "https://openrouter.ai/api/alpha"
     jev_input_usd_per_million: float = 0.0
     jev_output_usd_per_million: float = 0.0
     jev_pricing_is_free: bool = False
     timeout_seconds: float = 30.0
-    zero_data_retention: bool = True
 
     @property
     def name(self) -> str:
@@ -150,18 +149,12 @@ class VercelJevClassificationProvider:
                     "criteria": PRIORITY_CRITERIA,
                 },
             },
-            "providerOptions": {
-                "gateway": {
-                    "only": ["typesafe-ai"],
-                    "zeroDataRetention": self.zero_data_retention,
-                }
-            },
         }
 
     def _classify(self, *, email_text: str) -> tuple[str, float, str, Usage]:
         payload = self.build_payload(email_text=email_text)
         request = urllib.request.Request(
-            f"{self.base_url.rstrip('/')}/evaluate",
+            f"{self.base_url.rstrip('/')}/decisions",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
             method="POST",
@@ -172,26 +165,26 @@ class VercelJevClassificationProvider:
                 decoded = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             raise ProviderError(
-                f"Vercel Jev rejected the request with HTTP {exc.code}: {_bounded_error_body(exc)}",
+                f"OpenRouter Jev rejected the request with HTTP {exc.code}: {_bounded_error_body(exc)}",
                 latency_ms=(time.perf_counter() - started) * 1_000,
             ) from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise ProviderError(
-                f"Vercel Jev failed: {exc}", latency_ms=(time.perf_counter() - started) * 1_000
+                f"OpenRouter Jev failed: {exc}", latency_ms=(time.perf_counter() - started) * 1_000
             ) from exc
 
         if not isinstance(decoded, dict):
             raise ProviderError(
-                "Vercel Jev response was not a JSON object",
+                "OpenRouter Jev response was not a JSON object",
                 latency_ms=(time.perf_counter() - started) * 1_000,
             )
         case_type, case_probability = _choice_answer(decoded, "case_type", CaseType)
         priority, _ = _choice_answer(decoded, "priority", Priority)
         usage_payload = decoded.get("usage", {})
         usage_payload = usage_payload if isinstance(usage_payload, dict) else {}
-        input_tokens = _usage_integer(usage_payload.get("inputTokens"))
-        output_tokens = _usage_integer(usage_payload.get("outputTokens"))
-        cost = _gateway_cost(decoded)
+        input_tokens = _usage_integer(usage_payload.get("input_tokens"))
+        output_tokens = _usage_integer(usage_payload.get("output_tokens"))
+        cost = _response_cost(decoded)
         if cost is None:
             cost = (
                 input_tokens * self.jev_input_usd_per_million

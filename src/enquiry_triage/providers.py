@@ -526,17 +526,17 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
     api_key = _required_string(settings, "api_key", spec)
 
     if spec == "jev":
-        from .jev import VercelJevClassificationProvider
+        from .jev import OpenRouterJevClassificationProvider
 
         base_provider_name = _required_string(settings, "base_provider", spec)
         if base_provider_name == "jev":
             raise ProviderError("Provider 'jev' cannot use itself as 'base_provider'")
         base_provider = provider_from_spec(base_provider_name, config_path=config_path)
         base_url = _optional_string(
-            settings, "base_url", "https://ai-gateway.vercel.sh/v1", spec
+            settings, "base_url", "https://openrouter.ai/api/alpha", spec
         )
         _validate_base_url(base_url)
-        return VercelJevClassificationProvider(
+        return OpenRouterJevClassificationProvider(
             base_provider=base_provider,
             model=model,
             base_url=base_url,
@@ -545,9 +545,6 @@ def provider_from_spec(spec: str, *, config_path: Path | None = None) -> TriageP
             jev_output_usd_per_million=_price(settings, "output_usd_per_million", spec),
             jev_pricing_is_free=_pricing_is_free(settings, spec),
             timeout_seconds=_positive_number(settings, "timeout_seconds", 30, spec),
-            zero_data_retention=_optional_bool(
-                settings, "zero_data_retention", True, spec
-            ),
         )
 
     if spec == "gemini":

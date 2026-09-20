@@ -8,7 +8,7 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
-from enquiry_triage.jev import VercelJevClassificationProvider
+from enquiry_triage.jev import OpenRouterJevClassificationProvider
 from enquiry_triage.models import TriageResult, json_schema
 from enquiry_triage.providers import (
     GeminiGenerateContentProvider,
@@ -254,18 +254,18 @@ class ProviderPayloadTests(unittest.TestCase):
         self.assertEqual(provider.base_url, "https://generativelanguage.googleapis.com/v1beta")
 
 
-class VercelJevClassificationTests(unittest.TestCase):
-    def _provider(self, content: str | None = None) -> VercelJevClassificationProvider:
-        return VercelJevClassificationProvider(
+class OpenRouterJevClassificationTests(unittest.TestCase):
+    def _provider(self, content: str | None = None) -> OpenRouterJevClassificationProvider:
+        return OpenRouterJevClassificationProvider(
             base_provider=FixedDraftProvider(content),
-            api_key="vercel-test-key",
+            api_key="openrouter-test-key",
             jev_input_usd_per_million=0.04,
         )
 
-    def test_payload_uses_two_typed_choice_questions_and_gateway_privacy_options(self) -> None:
+    def test_payload_uses_two_typed_choice_questions(self) -> None:
         payload = self._provider().build_payload(email_text="Subject: Duplicate payment")
 
-        self.assertEqual(payload["model"], "typesafe-ai/jev")
+        self.assertEqual(payload["model"], "typesafe/jev-1.13")
         self.assertEqual(payload["questions"]["case_type"]["type"], "choice")
         self.assertEqual(
             set(payload["questions"]["case_type"]["criteria"]),
@@ -274,13 +274,12 @@ class VercelJevClassificationTests(unittest.TestCase):
         self.assertEqual(
             set(payload["questions"]["priority"]["criteria"]), {"URGENT", "NORMAL", "LOW"}
         )
-        self.assertEqual(payload["providerOptions"]["gateway"]["only"], ["typesafe-ai"])
-        self.assertTrue(payload["providerOptions"]["gateway"]["zeroDataRetention"])
+        self.assertNotIn("providerOptions", payload)
         self.assertIn("untrusted customer data", payload["state"]["trust_boundary"])
 
     def test_jev_overrides_only_classification_and_its_confidence(self) -> None:
         response_body = {
-            "model": "typesafe-ai/jev",
+            "model": "typesafe/jev-1.13-20260917",
             "answers": {
                 "case_type": {
                     "type": "choice",
@@ -293,8 +292,7 @@ class VercelJevClassificationTests(unittest.TestCase):
                     "probabilities": {"URGENT": 0.01, "NORMAL": 0.94, "LOW": 0.05},
                 },
             },
-            "usage": {"inputTokens": 25, "outputTokens": 4},
-            "providerMetadata": {"gateway": {"cost": "0.000001"}},
+            "usage": {"input_tokens": 25, "output_tokens": 4, "cost": 0.000001},
         }
         fake_response = io.BytesIO(json.dumps(response_body).encode("utf-8"))
         provider = self._provider()
@@ -316,15 +314,15 @@ class VercelJevClassificationTests(unittest.TestCase):
         self.assertEqual(result["confidence"]["score"], 0.97)
         self.assertIn("Jev choice probability", result["confidence"]["methodology"])
         self.assertEqual(validated.case_type.value, "PREMIUM_BILLING")
-        self.assertEqual(response.model_name, "typesafe-ai/jev+draft-model")
+        self.assertEqual(response.model_name, "typesafe/jev-1.13+draft-model")
         self.assertEqual(response.usage.input_tokens, 125)
         self.assertEqual(response.usage.output_tokens, 54)
         self.assertAlmostEqual(response.usage.cost_usd, 0.000201)
         self.assertIn("case_type: PREMIUM_BILLING", provider.base_provider.last_system_prompt or "")
         self.assertIn("priority: NORMAL", provider.base_provider.last_system_prompt or "")
         request = mocked.call_args.args[0]
-        self.assertEqual(request.full_url, "https://ai-gateway.vercel.sh/v1/evaluate")
-        self.assertEqual(request.headers["Authorization"], "Bearer vercel-test-key")
+        self.assertEqual(request.full_url, "https://openrouter.ai/api/alpha/decisions")
+        self.assertEqual(request.headers["Authorization"], "Bearer openrouter-test-key")
 
     def test_invalid_choice_fails_visibly_instead_of_falling_back(self) -> None:
         response_body = {
@@ -365,7 +363,7 @@ class VercelJevClassificationTests(unittest.TestCase):
                     "probabilities": {"NORMAL": 0.7},
                 },
             },
-            "usage": {"inputTokens": 5, "outputTokens": 2},
+            "usage": {"input_tokens": 5, "output_tokens": 2},
         }
         fake_response = io.BytesIO(json.dumps(response_body).encode("utf-8"))
         with patch("enquiry_triage.jev.urllib.request.urlopen", return_value=fake_response) as mocked:
@@ -376,7 +374,7 @@ class VercelJevClassificationTests(unittest.TestCase):
             )
 
         self.assertEqual(response.content, "not-json")
-        self.assertEqual(response.model_name, "typesafe-ai/jev+draft-model")
+        self.assertEqual(response.model_name, "typesafe/jev-1.13+draft-model")
         self.assertEqual(response.usage.input_tokens, 105)
         mocked.assert_called_once()
 
@@ -386,17 +384,17 @@ class VercelJevClassificationTests(unittest.TestCase):
             config_path.write_text(
                 '[providers.deepseek]\nmodel = "deepseek-test"\napi_key = "deepseek-key"\n'
                 'base_url = "https://api.deepseek.com"\n\n'
-                '[providers.jev]\nmodel = "typesafe-ai/jev"\napi_key = "vercel-key"\n'
-                'base_provider = "deepseek"\nzero_data_retention = true\n'
+                '[providers.jev]\nmodel = "typesafe/jev-1.13"\napi_key = "openrouter-key"\n'
+                'base_provider = "deepseek"\n'
                 'input_usd_per_million = 0.04\n',
                 encoding="utf-8",
             )
             provider = provider_from_spec("jev", config_path=config_path)
 
-        self.assertIsInstance(provider, VercelJevClassificationProvider)
+        self.assertIsInstance(provider, OpenRouterJevClassificationProvider)
         self.assertIsInstance(provider.base_provider, OpenAICompatibleProvider)
         self.assertEqual(provider.base_provider.model, "deepseek-test")
-        self.assertEqual(provider.name, "typesafe-ai/jev+deepseek-test")
+        self.assertEqual(provider.name, "typesafe/jev-1.13+deepseek-test")
         self.assertEqual(provider.input_usd_per_million, 0.04)
         self.assertFalse(provider.pricing_is_free)
 
